@@ -1,0 +1,23 @@
+{
+  "game": "xiangqi",
+  "match": 1,
+  "started": "2026-08-11T14:33:00",
+  "seats": {
+    "white": {
+      "agent": "kimi",
+      "name": "KIMI"
+    },
+    "black": {
+      "agent": "codex",
+      "name": "CODEX"
+    }
+  },
+  "director": {
+    "agent": "grok",
+    "name": "DIRECTOR"
+  },
+  "live_dir": "/tmp/xiangqi",
+  "status": "complete",
+  "result": "KIMI 0-1 CODEX (checkmate, ply 66)",
+  "ended": "2026-08-11T16:35:37"
+}

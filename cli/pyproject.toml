@@ -1,0 +1,24 @@
+[project]
+name = "arcade-cli"
+version = "0.1.0"
+description = "Match manager for the AI Agent Arcade — deploys the engine runtime, tracks match.json, archives finished games."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+arcade = "arcade_cli.main:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/arcade_cli"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

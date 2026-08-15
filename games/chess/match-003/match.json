@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 3,
+  "started": null,
+  "seats": {
+    "white": {
+      "agent": "codex",
+      "name": "CODEX"
+    },
+    "black": {
+      "agent": "kimi",
+      "name": "KIMI"
+    }
+  },
+  "director": {
+    "agent": "grok",
+    "name": "DIRECTOR"
+  },
+  "live_dir": "/tmp/chess",
+  "status": "complete",
+  "result": "CODEX 1-0 KIMI (Rf5# ply 67)",
+  "ended": "2026-08-10T17:45:22"
+}

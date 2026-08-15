@@ -1,0 +1,1 @@
+e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 Nc6 Bg5 e6 Qd2 Be7 O-O-O O-O f4 h6 Bh4 Nxe4 Nxe4 Bxh4 Nxc6 bxc6 Nxd6 Qb6 Qd4 Qxb2+ Qxb2 Rb8 Qxb8 c5 Nxc8 Bd8 Ne7+ Kh8 Qxd8 Rxd8 Rxd8+ Kh7 Bd3+ f5 Bxf5+ exf5 Nxf5 Kg6 Ne7+ Kf7 Nc6 a6 Rd7+ Kg6 Ne5+ Kf5 g4+ Kxf4 Nd3+ Kxg4 Rxg7+ Kf5 Rf7+ Kg6 Ne5+ Kg5 h4+ Kh5 Rf5#

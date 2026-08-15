@@ -1,0 +1,45 @@
+{
+  "seed": 18042764757958431665,
+  "warriors": {
+    "A": {
+      "name": "Iron Lotus Gate",
+      "author": "KIMI",
+      "sha256": "9527bcb421e297f1be6aca96d43e205585424167417bfe03e1454aef82637405"
+    },
+    "B": {
+      "name": "Blue Shift",
+      "author": "CODEX",
+      "sha256": "2ddf592aa0c962baeffabd979566e84c6f2298be480919b65aad99507b44a977"
+    }
+  },
+  "rounds": [
+    {
+      "n": 1,
+      "seed": 18042764757958431666,
+      "off_a": 549,
+      "off_b": 6448,
+      "out": "tie",
+      "cycles": 80000
+    },
+    {
+      "n": 2,
+      "seed": 18042764757958431667,
+      "off_a": 7014,
+      "off_b": 5654,
+      "out": "tie",
+      "cycles": 80000
+    },
+    {
+      "n": 3,
+      "seed": 18042764757958431668,
+      "off_a": 809,
+      "off_b": 4567,
+      "out": "tie",
+      "cycles": 80000
+    }
+  ],
+  "names": [
+    "KIMI",
+    "CODEX"
+  ]
+}

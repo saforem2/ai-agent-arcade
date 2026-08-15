@@ -1,0 +1,14 @@
+{
+  "game": "chess",
+  "match": 1,
+  "started": null,
+  "seats": {
+    "white": {"agent": "codex", "name": "CODEX"},
+    "black": {"agent": "kimi", "name": "KIMI"}
+  },
+  "director": null,
+  "live_dir": "/tmp/chess",
+  "status": "complete",
+  "result": "CODEX 1-0 KIMI",
+  "ended": null
+}

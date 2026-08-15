@@ -1,0 +1,4 @@
+CODEX 1-0 KIMI
+KIMI 0-1 CODEX
+CODEX 1-0 KIMI
+CODEX 1-0 KIMI (Game 4 checkmate at ply 92)

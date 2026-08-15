@@ -1,0 +1,45 @@
+{
+  "seed": 1718678787285044463,
+  "warriors": {
+    "A": {
+      "name": "Twin Ember",
+      "author": "KIMI",
+      "sha256": "adb656d4c603693fad703959f4facb171ebad11b024b5b238585a528c78894b2"
+    },
+    "B": {
+      "name": "Blue Fugue",
+      "author": "CODEX",
+      "sha256": "b289f7a76bfec8397a73862525aff05d6060bf293c44a26c15f93cee9811f892"
+    }
+  },
+  "rounds": [
+    {
+      "n": 1,
+      "seed": 1718678787285044464,
+      "off_a": 1869,
+      "off_b": 3222,
+      "out": "tie",
+      "cycles": 80000
+    },
+    {
+      "n": 2,
+      "seed": 1718678787285044465,
+      "off_a": 2964,
+      "off_b": 6985,
+      "out": "tie",
+      "cycles": 80000
+    },
+    {
+      "n": 3,
+      "seed": 1718678787285044466,
+      "off_a": 3393,
+      "off_b": 5389,
+      "out": "0-1",
+      "cycles": 15318
+    }
+  ],
+  "names": [
+    "KIMI",
+    "CODEX"
+  ]
+}

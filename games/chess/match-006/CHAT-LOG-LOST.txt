@@ -1,0 +1,20 @@
+CHAT LOG LOST — chess match-006 (GEMINI 1-0 CODEX)
+
+This match's room conversation is not in the archive. An `arcade archive` run
+that was not given `--game` wrote a xiangqi match's artifacts into this
+directory, and `chat.log` was overwritten with that other match's
+conversation. The overwrite was found later, by which point the original was
+gone: the live room had already been reset for the next match, and chat.log
+is not under version control the way the source tree is.
+
+What survived and is genuine: moves.txt, fen.txt, the result, seats.txt,
+roles.txt, names.txt, eval.log, keeper.log, and the replay videos.
+
+The file that occupied this slot was byte-identical to
+games/xiangqi/match-001/chat.log. It is not published here, because a chat log
+sitting in a chess match's directory reads as that match's record whatever a
+footnote says, and a reconstructed conversation would be worse still. This
+note is what is left, and it is accurate.
+
+The bug is fixed: the CLI now infers the game from the live dir and refuses to
+archive across games.

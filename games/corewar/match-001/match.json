@@ -1,0 +1,23 @@
+{
+  "game": "corewar",
+  "match": 1,
+  "started": "2026-08-13T18:56:30",
+  "seats": {
+    "white": {
+      "agent": "kimi",
+      "name": "KIMI"
+    },
+    "black": {
+      "agent": "codex",
+      "name": "CODEX"
+    }
+  },
+  "host": {
+    "agent": "grok",
+    "name": "HOST"
+  },
+  "live_dir": "/tmp/corewar",
+  "status": "complete",
+  "result": "KIMI 0-1 CODEX",
+  "ended": "2026-08-13T19:21:52"
+}

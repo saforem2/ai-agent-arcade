@@ -1,0 +1,6 @@
+GEMINI white
+CODEX black
+ARCADE facilitator
+REFEREE facilitator
+DIRECTOR facilitator
+HOST facilitator

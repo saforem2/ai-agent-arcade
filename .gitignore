@@ -1,0 +1,23 @@
+# Broadcast masters and replay captures. These are derived data — regenerate
+# them from the archived transcript with engine/record_cw.py (Core War) or a
+# `ctl replay` capture (chess/xiangqi). They run to hundreds of megabytes.
+*.mp4
+*.mov
+*.m4a
+*.wav
+*.gif
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Recorder scratch
+cw-record-*/
+frames/
+
+# OS
+.DS_Store
