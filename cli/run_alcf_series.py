@@ -54,6 +54,14 @@ def board_from_log(live):
     return board, moves
 
 
+def terminal_result(board):
+    outcome = board.outcome(claim_draw=True)
+    if outcome is None:
+        return None
+    reason = outcome.termination.name.lower().replace("_", " ")
+    return outcome.result(), reason
+
+
 def ask(player, board, moves, log):
     legal = [board.san(move) for move in board.legal_moves]
     base_prompt = f"""You are {player['name']} in a chess match against another language model.
@@ -170,7 +178,16 @@ def play_one(live, game_index, games_requested, white, black, series_log):
     append(series_log, f"GAME {game_index}/{games_requested} match-{match_number:03d}: {white['name']} vs {black['name']}")
     for _ in range(300):
         board, moves = board_from_log(live)
-        if board.is_game_over(claim_draw=True):
+        terminal = terminal_result(board)
+        if terminal:
+            if not board.is_game_over():
+                score, reason = terminal
+                entry = f"{white['name']} {score} {black['name']}"
+                with (live / "results.txt").open("a") as handle:
+                    handle.write(entry + "\n")
+                (live / "result.txt").write_text(f"draw ({reason})\n")
+                (live / "banner.txt").write_text(f"{entry} — {reason}\n")
+                post(live, "HOST", f"{entry} ({reason}).")
             break
         player = white if len(moves) % 2 == 0 else black
         san = ask(player, board, moves, logs[player["name"]])
@@ -185,7 +202,8 @@ def play_one(live, game_index, games_requested, white, black, series_log):
         cwd=live,
         env={**os.environ, "ARCADE_LIVE": str(live)},
     )
-    results = [line for line in (live / "results.txt").read_text().splitlines() if line.strip()]
+    results_path = live / "results.txt"
+    results = [line for line in results_path.read_text().splitlines() if line.strip()] if results_path.exists() else []
     if not results:
         raise RuntimeError(f"match-{match_number:03d} ended without a result")
     result = results[-1]
@@ -222,10 +240,23 @@ def write_summary(path, rows, games_requested):
     path.write_text(json.dumps(payload, indent=2) + "\n")
 
 
+def existing_series_rows(before_match):
+    rows = []
+    for path in sorted((ROOT / "games/chess").glob("match-*/match.json")):
+        data = json.loads(path.read_text())
+        if data.get("match", 0) < before_match:
+            continue
+        result = data.get("result") or ""
+        if data.get("status") == "complete" and len(result.split()) == 3:
+            rows.append((data["match"], result))
+    return rows
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=20)
     parser.add_argument("--live-dir", type=Path, default=DEFAULT_LIVE)
+    parser.add_argument("--start-index", type=int, default=1)
     return parser.parse_args()
 
 
@@ -235,9 +266,15 @@ if __name__ == "__main__":
     live_dir.mkdir(parents=True, exist_ok=True)
     series_log = live_dir / "series-runner.log"
     summary = live_dir / "series-summary.json"
-    series_log.write_text("")
-    completed = []
-    for game_index in range(1, args.games + 1):
+    if args.start_index < 1 or args.start_index > args.games:
+        raise SystemExit("--start-index must be between 1 and --games")
+    if args.start_index == 1:
+        series_log.write_text("")
+        completed = []
+    else:
+        completed = existing_series_rows(next_match_number() - args.start_index + 1)
+        append(series_log, f"RESUME at game {args.start_index}/{args.games}")
+    for game_index in range(args.start_index, args.games + 1):
         if game_index % 2:
             white, black = PLAYERS["gpt-oss"], PLAYERS["inkling"]
         else:
