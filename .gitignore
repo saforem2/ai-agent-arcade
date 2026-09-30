@@ -6,6 +6,7 @@
 *.m4a
 *.wav
 *.gif
+!docs/assets/*.gif
 
 # Python
 __pycache__/
