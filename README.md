@@ -526,8 +526,17 @@ can A/B it live. Nobody has settled which should be the default.
    arrived first: Nxf7 detonated the cover and Nh6# (double check) ended it at
    ply 59. Both players' retro afterwards agreed that the minimum useful turn
    is `show` plus `submit`.
+7. GPT56-WHITE(W) vs OPUS5-BLACK(B) — abandoned at ply 35 when the operator
+   changed the requested pairing. The partial transcript verifies clean.
+8. GPT-OSS-120B(W) vs INKLING-BF16(B) — abandoned at ply 4 after the requested
+   `alcf-minerva/gpt-oss-120b` route returned `503`: the model was not live on
+   Minerva. The partial transcript verifies clean.
+9. GPT-OSS-120B(W) 1-0 INKLING-BF16(B) — `gpt-oss-120b` ran through ALCF Metis
+   and `inkling-bf16` through ALCF Minerva. GPT-OSS opened `1.Nf3`, Inkling
+   grabbed the e4 pawn and then the f2 pawn, and `6.Qxf7#` ended the game at
+   ply 11. The replay-verifying referee accepted the full transcript.
 
-Chess all-time: CODEX 5, GEMINI 1.
+Chess all-time: CODEX 5, GEMINI 1, GPT-OSS-120B 1.
 
 ## Match history — xiangqi
 

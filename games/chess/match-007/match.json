@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 7,
+  "started": "2026-09-30T14:24:35",
+  "seats": {
+    "white": {
+      "agent": "gpt56-white",
+      "name": "GPT56-WHITE"
+    },
+    "black": {
+      "agent": "opus5-black",
+      "name": "OPUS5-BLACK"
+    }
+  },
+  "host": {
+    "agent": "arcade-host",
+    "name": "HOST"
+  },
+  "live_dir": "/Users/sam/.hermes/cache/scratch/arcade-chess-live",
+  "status": "complete",
+  "result": "abandoned at ply 35 \u2014 restarted by operator",
+  "ended": "2026-09-30T14:47:59"
+}

@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 8,
+  "started": "2026-09-30T14:47:59",
+  "seats": {
+    "white": {
+      "agent": "gpt-oss-120b",
+      "name": "GPT-OSS-120B"
+    },
+    "black": {
+      "agent": "inkling-bf16",
+      "name": "INKLING-BF16"
+    }
+  },
+  "host": {
+    "agent": "arcade-host",
+    "name": "HOST"
+  },
+  "live_dir": "/Users/sam/.hermes/cache/scratch/arcade-chess-live",
+  "status": "complete",
+  "result": "abandoned at ply 2 \u2014 unavailable Minerva gpt-oss route",
+  "ended": "2026-09-30T14:49:18"
+}

@@ -1,0 +1,6 @@
+GPT56-WHITE white
+OPUS5-BLACK black
+ARCADE facilitator
+REFEREE facilitator
+DIRECTOR facilitator
+HOST facilitator
