@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 10,
+  "started": "2026-09-30T14:58:35",
+  "seats": {
+    "white": {
+      "agent": "gpt-oss-120b",
+      "name": "GPT-OSS-120B"
+    },
+    "black": {
+      "agent": "inkling-bf16",
+      "name": "INKLING-BF16"
+    }
+  },
+  "host": {
+    "agent": "series-host",
+    "name": "HOST"
+  },
+  "live_dir": "/Users/sam/.hermes/cache/scratch/alcf-chess-smoke",
+  "status": "complete",
+  "result": "abandoned at ply 29 \u2014 one-game smoke exceeded harness timeout",
+  "ended": "2026-09-30T15:05:52"
+}
