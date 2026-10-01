@@ -53,6 +53,22 @@ def test_parse_decision_rejects_move_outside_legal_list():
     assert series.parse_decision(raw, ["Nf3", "e4"]) is None
 
 
+def test_parse_decision_accepts_json_from_reasoning_field():
+    body = {
+        "choices": [{"message": {"content": "", "reasoning": json.dumps({
+            "move": "e4",
+            "candidate_moves": ["e4"],
+            "rationale": "Claims the center.",
+            "expected_reply": "e5",
+        })}}],
+        "usage": {},
+    }
+
+    raw, _ = series.decision_response(body)
+
+    assert series.parse_decision(raw, ["e4", "Nf3"])["move"] == "e4"
+
+
 def test_ask_retries_timeout_and_records_reasoning_usage(tmp_path, monkeypatch):
     board = chess.Board()
     calls = []

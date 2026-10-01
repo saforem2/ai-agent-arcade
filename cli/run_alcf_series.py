@@ -87,6 +87,7 @@ def request_decision(player, prompt, timeout):
         "model": player["model"],
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
+        "reasoning_effort": "low",
         "max_tokens": 512,
     }).encode()
     request = urllib.request.Request(
@@ -96,9 +97,15 @@ def request_decision(player, prompt, timeout):
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         body = json.load(response)
+    return decision_response(body)
+
+
+def decision_response(body):
     usage = body.get("usage") or {}
     details = usage.get("completion_tokens_details") or {}
-    return body["choices"][0]["message"]["content"], {
+    message = body["choices"][0]["message"]
+    raw = message.get("content") or message.get("reasoning") or ""
+    return raw, {
         "prompt_tokens": usage.get("prompt_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
         "reasoning_tokens": details.get("reasoning_tokens"),
