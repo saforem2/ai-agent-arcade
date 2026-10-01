@@ -59,7 +59,13 @@ def latest_rationale(live: Path) -> dict | None:
         return None
 
 
-def score_line(live: Path, white: str, black: str) -> str:
+def score_line(live: Path, white: str, black: str, summary: dict | None = None) -> str:
+    if summary and summary.get("games_complete") is not None:
+        wins = summary.get("wins") or {}
+        return (
+            f"{wins.get(white, 0)}–{wins.get(black, 0)} · "
+            f"{summary.get('draws', 0)} draws · {summary['games_complete']} complete"
+        )
     rows = arcade.parse_results(read_text(live / "results.txt"))
     wins_white, wins_black, draws, games = arcade.head_to_head(rows, white, black)
     return f"{wins_white}–{wins_black} · {draws} draws · {games} complete"
@@ -172,7 +178,7 @@ class Thunderdome(App):
         snap = Snapshot(
             game=min(complete + 1, self.games), games=self.games,
             white=names[0], black=names[1], ply=len(moves), board=board,
-            rationale=rationale, score=score_line(self.live, names[0], names[1]), status=status,
+            rationale=rationale, score=score_line(self.live, names[0], names[1], summary), status=status,
         )
         self.query_one("#board", Static).update(board_markup(board))
         turn = snap.white if board.turn else snap.black

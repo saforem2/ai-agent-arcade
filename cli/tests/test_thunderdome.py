@@ -5,7 +5,20 @@ import pytest
 
 pytest.importorskip("textual")
 
-from arcade_cli.thunderdome import Thunderdome
+from arcade_cli.thunderdome import Thunderdome, score_line
+
+
+def test_score_line_prefers_current_series_summary(tmp_path):
+    (tmp_path / "results.txt").write_text("GPT-OSS-120B 1-0 INKLING-BF16\n" * 9)
+    summary = {
+        "games_complete": 3,
+        "wins": {"GPT-OSS-120B": 1, "INKLING-BF16": 0},
+        "draws": 2,
+    }
+
+    assert score_line(tmp_path, "GPT-OSS-120B", "INKLING-BF16", summary) == (
+        "1–0 · 2 draws · 3 complete"
+    )
 
 
 @pytest.mark.asyncio
