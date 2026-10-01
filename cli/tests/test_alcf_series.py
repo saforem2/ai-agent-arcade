@@ -266,3 +266,47 @@ def test_main_turns_keyboard_interrupt_into_clean_exit(monkeypatch):
         series.main()
 
     assert stopped.value.code == 130
+
+
+LEGAL = ["Nf3", "e4", "d4"]
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ('```json\n{"move":"Nf3","candidate_moves":["Nf3"],"rationale":"r","expected_reply":"Nf6"}\n```', "Nf3"),
+        ('```\n{"move":"e4","candidate_moves":[],"rationale":"r","expected_reply":""}\n```', "e4"),
+        ('Here is my move:\n{"move":"Nf3","candidate_moves":[],"rationale":"r","expected_reply":""}', "Nf3"),
+        ('{"move":"d4","candidate_moves":[],"rationale":"r","expected_reply":""}\nThat should work.', "d4"),
+        ('reasoning...\n```json\n{"move":"e4","candidate_moves":[],"rationale":"r","expected_reply":""}\n```\ndone', "e4"),
+    ],
+    ids=["fenced-json", "fenced-bare", "prose-prefix", "prose-suffix", "fence-inside-prose"],
+)
+def test_parse_decision_recovers_json_wrapped_in_fences_or_prose(raw, expected):
+    """Reasoning models wrap JSON in markdown; a strict whole-body json.loads
+    rejected every attempt and aborted the match with 'did not return legal SAN'."""
+    decision = series.parse_decision(raw, LEGAL)
+
+    assert decision is not None
+    assert decision["move"] == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["", "I will play Nf3 because it controls the center.", '{"move":"Qh5"}', "{not json at all}"],
+    ids=["empty", "prose-only", "illegal-move", "malformed"],
+)
+def test_parse_decision_still_rejects_unusable_responses(raw):
+    assert series.parse_decision(raw, LEGAL) is None
+
+
+def test_ask_reports_the_last_raw_response_when_every_attempt_fails(tmp_path, monkeypatch):
+    """The old error named only the player, so the actual model output was lost."""
+    monkeypatch.setattr(series, "request_decision", lambda *a, **k: ("no json here", {}))
+    board = chess.Board()
+    log = tmp_path / "log.txt"
+
+    with pytest.raises(RuntimeError) as failure:
+        series.ask(series.PLAYERS["gpt-oss"], board, [], log, tmp_path / "decisions.jsonl")
+
+    assert "no json here" in str(failure.value)

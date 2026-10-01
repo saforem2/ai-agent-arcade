@@ -56,11 +56,14 @@ async def record(match: Path, out: Path, scratch: Path, frames: int, fps: int, s
         # exactly one interval, independent of how long SVG export takes.
         virtual = {"t": 0.0}
         board.clock = lambda: virtual["t"]
-        board.start_replay()
+        # Replay through the app so the match panel and decision list rewind
+        # with the board instead of sitting on the archive's final state.
+        app.start_replay()
 
         for index in range(frames):
             virtual["t"] = index / fps
             board.tick_frame()
+            app.refresh_state()
             await pilot.pause()
             svg = scratch / f"frame-{index:03d}.svg"
             png = scratch / f"frame-{index:03d}.png"
@@ -86,7 +89,7 @@ def main() -> None:
     parser.add_argument("match", type=Path, help="archived match directory to replay")
     parser.add_argument("--output", type=Path, default=ROOT / "docs/assets/arcade-tui.gif")
     parser.add_argument("--scratch", type=Path, default=Path("/Users/sam/.hermes/cache/scratch/arcade-tui-frames"))
-    parser.add_argument("--frames", type=int, default=140)
+    parser.add_argument("--frames", type=int, default=260)
     parser.add_argument("--fps", type=int, default=14)
     parser.add_argument("--cols", type=int, default=150)
     parser.add_argument("--rows", type=int, default=46)

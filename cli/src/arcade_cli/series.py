@@ -144,11 +144,52 @@ def terminal_result(board):
     return outcome.result(), reason
 
 
+def json_objects(raw):
+    """Yield every balanced top-level JSON object in ``raw``, last first.
+    Reasoning models wrap the answer in markdown fences or surround it with
+    prose, so a whole-body ``json.loads`` throws away a perfectly good move.
+    Scanning for brace-balanced spans (string- and escape-aware) recovers it
+    without regex guesswork. Later objects win: when a model restates its
+    answer, the final statement is the decision.
+    """
+    spans, depth, start, in_string, escaped = [], 0, None, False, False
+    for index, char in enumerate(raw):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                spans.append(raw[start:index + 1])
+    for span in reversed(spans):
+        try:
+            data = json.loads(span)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            yield data
+
+
 def parse_decision(raw, legal):
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
+    for data in json_objects(raw or ""):
+        decision = _decision_from(data, legal)
+        if decision:
+            return decision
+    return None
+
+
+def _decision_from(data, legal):
     move = data.get("move")
     if move not in legal:
         return None
@@ -225,6 +266,7 @@ Legal SAN moves: {' '.join(legal)}
 Return JSON only with these fields:
 {{"move":"<legal SAN>","candidate_moves":["<up to 3 legal SAN moves>"],"rationale":"<one concise sentence explaining the choice>","expected_reply":"<one likely legal reply or empty string>"}}
 This is a concise self-reported rationale, not hidden chain-of-thought."""
+    last_raw = ""
     for attempt in range(1, 4):
         prompt = base_prompt
         if attempt > 1:
@@ -236,6 +278,7 @@ This is a concise self-reported rationale, not hidden chain-of-thought."""
             append(log, f"timeout: {exc}")
             continue
         append(log, f"response: {raw or '(empty)'}")
+        last_raw = raw or last_raw
         decision = parse_decision(raw, legal)
         if decision:
             row = {
@@ -248,7 +291,10 @@ This is a concise self-reported rationale, not hidden chain-of-thought."""
             }
             append(decision_log, json.dumps(row, ensure_ascii=False))
             return decision
-    raise RuntimeError(f"{player['name']} did not return legal SAN")
+    detail = " ".join((last_raw or "(empty response)").split())[:300]
+    raise RuntimeError(
+        f"{player['name']} did not return legal SAN after 3 attempts; last response: {detail}"
+    )
 
 
 def post(live, name, text):

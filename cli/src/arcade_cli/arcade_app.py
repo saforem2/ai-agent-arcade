@@ -117,6 +117,70 @@ def score_line(live: Path, white: str, black: str, summary: dict | None = None) 
     return f"{wins_white}–{wins_black} · {draws} draws · {games} complete"
 
 
+PIECE_VALUE = {
+    chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3,
+    chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 0,
+}
+
+
+def match_markup(board, moves, white, black, game, games, score, status):
+    """The original MATCH/MATERIAL/MOVES panel, derived from authoritative SAN."""
+    replay = chess.Board()
+    rows = []
+    for index, san in enumerate(moves):
+        try:
+            move = replay.parse_san(san)
+        except ValueError:
+            break
+        piece = replay.piece_at(move.from_square)
+        capture = replay.is_capture(move)
+        replay.push(move)
+        mark = "#" if replay.is_checkmate() else "+" if replay.is_check() else ""
+        if capture:
+            mark = "×" + mark
+        name = white if index % 2 == 0 else black
+        hue = "#78d2eb" if index % 2 == 0 else "#f0a046"
+        rows.append(
+            f"[#697386]{index // 2 + 1:>3}.[/] [{hue}]{name[:6]:<6}[/] "
+            f"{piece.symbol().upper() if piece else '?'} "
+            f"[#8a93a6]{chess.square_name(move.from_square)}→{chess.square_name(move.to_square)}[/] {mark}"
+        )
+
+    material = sum(
+        PIECE_VALUE[piece.piece_type] * (1 if piece.color else -1)
+        for piece in board.piece_map().values()
+    )
+    if material:
+        leader = white if material > 0 else black
+        hue = "#78d2eb" if material > 0 else "#f0a046"
+        margin = abs(material)
+        filled = max(1, min(14, round(margin / 15 * 14)))
+        material_text = (
+            f"[{hue}]{leader}[/] [bold]+{margin}[/]\n"
+            f"[{hue}]{'█' * filled}[/][#4d5668]{'·' * (14 - filled)}[/]\n"
+            f"[#697386]ahead by {margin} point{'s' if margin != 1 else ''}[/]"
+        )
+    else:
+        material_text = "[#697386]level  ··············[/]"
+
+    if board.is_checkmate():
+        winner = black if board.turn else white
+        state = f"[bold #f0a046]checkmate — {winner} wins[/]"
+    elif board.is_game_over(claim_draw=True):
+        state = f"[#8a93a6]game over — {board.outcome(claim_draw=True).termination.name.lower().replace('_', ' ')}[/]"
+    else:
+        turn = white if board.turn else black
+        state = f"{turn} to move" + (" — CHECK" if board.is_check() else "")
+
+    moves_text = "\n".join(reversed(rows[-12:])) if rows else "[#697386]no moves yet[/]"
+    return (
+        f"[bold #78d2eb]MATCH[/]\nGame {game}/{games} · ply {len(rows)} · move {(len(rows) + 1) // 2}\n"
+        f"{white} vs {black}\n{score}\n{state}\nstatus: {status}\n\n"
+        f"[bold #8a93a6]MATERIAL[/]\n{material_text}\n\n"
+        f"[bold #8a93a6]MOVES[/]\n{moves_text}"
+    )
+
+
 class BrailleBoard(Static):
     """Board widget with an original dot-field style and a compact glyph style."""
 
@@ -152,7 +216,13 @@ class BrailleBoard(Static):
         return self.clock() if self.clock else time.monotonic()
 
     def on_mount(self) -> None:
-        self.set_interval(0.05, self.tick_frame)
+        self.set_interval(0.05, self._auto_tick)
+
+    def _auto_tick(self) -> None:
+        """Wall-clock animation. A recorder that installs ``clock`` owns the
+        cadence itself, so the timer must not advance frames behind its back."""
+        if self.clock is None:
+            self.tick_frame()
 
     def tick_frame(self) -> None:
         if self.style_name == "original":
@@ -195,9 +265,9 @@ class BrailleBoard(Static):
         self._paint()
 
     def update_position(self, board: chess.Board, white: str, black: str, moves=None) -> None:
-        new_moves = list(moves or [])
         if self.replay_moves:
             return
+        new_moves = list(moves or [])
         if len(new_moves) == len(self.moves) + 1 and new_moves[:-1] == self.moves:
             before = chess.Board()
             for san in self.moves:
@@ -279,7 +349,7 @@ class ArcadeApp(App):
     #board { width: 100%; height: 100%; content-align: left middle; text-style: bold; }
     #side { width: 46; height: 1fr; }
     .panel { border: round #334054; padding: 1 2; margin-left: 1; }
-    #match { height: 11; }
+    #match { height: 1fr; min-height: 22; }
     #decisions { height: 1fr; min-height: 16; scrollbar-size: 1 1; }
     #events { height: 9; }
     .title { color: #78d2eb; text-style: bold; }
@@ -321,6 +391,7 @@ class ArcadeApp(App):
         self.decisions_rendered = False
         self.runner_error = ""
         self.runner_error_rendered = False
+        self.replaying = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -398,7 +469,18 @@ class ArcadeApp(App):
         self.notify(f"Board style: {self.board_style}")
 
     def action_replay(self) -> None:
+        self.start_replay()
+
+    def start_replay(self) -> None:
+        """Rewind the whole view -- board, match panel and decisions -- to ply 0.
+
+        ``refresh_state`` then reads ``replay_ply`` instead of the archive's
+        final state, so the sidebar reveals each rationale as its move lands.
+        """
         self.query_one("#board", BrailleBoard).start_replay()
+        self.replaying = True
+        self.last_decision_count = -1
+        self.refresh_state()
 
     def action_decision_down(self) -> None:
         self.query_one("#decisions", VerticalScroll).scroll_relative(y=5, animate=False)
@@ -421,12 +503,25 @@ class ArcadeApp(App):
             return
         board, moves = board_from_live(self.live)
         history = decision_history(self.live)
+        if self.replaying:
+            widget = self.query_one("#board", BrailleBoard)
+            ply = widget.replay_index
+            if not widget.replay_moves and ply == 0:
+                self.replaying = False
+            else:
+                board = chess.Board()
+                for san in moves[:ply]:
+                    board.push_san(san)
+                moves = moves[:ply]
+                history = history[:ply]
         rationale = history[-1] if history else None
         summary_path = self.live / "series-summary.json"
         summary = json.loads(read_text(summary_path, "{}") or "{}")
         complete = summary.get("games_complete", max(0, self.start_index - 1))
         status = "paused" if self.paused else "running"
-        if not self.run_matches and ((self.live / "result.txt").exists() or board.is_game_over(claim_draw=True)):
+        if self.replaying:
+            status = "replay"
+        elif not self.run_matches and ((self.live / "result.txt").exists() or board.is_game_over(claim_draw=True)):
             status = "complete"
         if self.process and self.process.poll() is not None:
             status = "complete" if self.process.returncode == 0 else f"failed ({self.process.returncode})"
@@ -440,11 +535,9 @@ class ArcadeApp(App):
             rationale=rationale, score=score_line(self.live, names[0], names[1], summary), status=status,
         )
         self.query_one("#board", BrailleBoard).update_position(board, snap.white, snap.black, moves)
-        turn = snap.white if board.turn else snap.black
-        self.query_one("#match", Static).update(
-            f"[bold #78d2eb]MATCH[/]\nGame {snap.game}/{snap.games} · ply {snap.ply}\n"
-            f"{snap.white} vs {snap.black}\n{snap.score}\n{turn} to move\nstatus: {snap.status}"
-        )
+        self.query_one("#match", Static).update(match_markup(
+            board, moves, snap.white, snap.black, snap.game, snap.games, snap.score, snap.status
+        ))
         if len(history) != self.last_decision_count or not self.decisions_rendered:
             self.query_one("#decision", Static).update(decision_markup(history))
             self.query_one("#decisions", VerticalScroll).scroll_end(animate=False)

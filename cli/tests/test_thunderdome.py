@@ -3,6 +3,8 @@ import signal
 from pathlib import Path
 
 import pytest
+from rich.text import Text
+from textual.widgets import Static
 import chess
 
 pytest.importorskip("textual")
@@ -13,6 +15,7 @@ from arcade_cli.arcade_app import (
     decision_history,
     load_dot_renderer,
     original_board_frame,
+    match_markup,
     score_line,
 )
 
@@ -93,6 +96,38 @@ def test_original_board_uses_canonical_engine_renderer():
     assert frame.plain == renderer.strip_terminal_controls(ansi).plain
 
 
+def test_match_markup_restores_material_bar_and_move_history():
+    board = chess.Board()
+    moves = ["e4", "d5", "exd5", "Qxd5"]
+    for san in moves:
+        board.push_san(san)
+
+    text = Text.from_markup(match_markup(
+        board, moves, "WHITE", "BLACK", 1, 1, "0–0 · 0 draws", "running"
+    )).plain
+
+    assert "MATERIAL" in text
+    assert "level" in text
+    assert "MOVES" in text
+    assert "2. BLACK" in text
+    assert "Q d8→d5 ×" in text
+
+
+def test_match_markup_names_material_leader_and_draws_bar():
+    board = chess.Board()
+    moves = ["e4", "d5", "exd5"]
+    for san in moves:
+        board.push_san(san)
+
+    text = Text.from_markup(match_markup(
+        board, moves, "WHITE", "BLACK", 1, 1, "0–0 · 0 draws", "running"
+    )).plain
+
+    assert "WHITE +1" in text
+    assert "█" in text
+    assert "ahead by 1 point" in text
+
+
 @pytest.mark.asyncio
 async def test_new_move_starts_canonical_fly_animation():
     app = ArcadeApp(Path(__file__).resolve().parents[2] / "games/chess/match-009", 20, 1, True)
@@ -146,6 +181,42 @@ async def test_virtual_clock_drives_replay_deterministically():
         widget.tick_frame()
         assert widget.replay_index == 2
         assert widget.fly_animation[1] != first
+
+
+@pytest.mark.asyncio
+async def test_replay_reveals_match_and_decisions_progressively():
+    """A replay must rewind the sidebar too, not sit on the archive's final state."""
+    match = Path(__file__).resolve().parents[2] / "games/chess/match-035"
+    app = ArcadeApp(match, 1, 1, True, run_matches=False)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        app.refresh_state()
+        await pilot.pause()
+
+        board = app.query_one("#board", BrailleBoard)
+        virtual = {"t": 0.0}
+        board.clock = lambda: virtual["t"]
+        app.start_replay()
+        await pilot.pause()
+
+        assert "ply 0" in str(app.query_one("#match", Static).content)
+        assert "Waiting for the first move" in str(app.query_one("#decision", Static).content)
+
+        # Two moves in, the sidebar must show exactly those two decisions.
+        for step in range(1, 30):
+            virtual["t"] = step * 0.05
+            board.tick_frame()
+            app.refresh_state()
+            if board.replay_index == 2 and not board.fly_animation:
+                break
+        await pilot.pause()
+
+        decisions = str(app.query_one("#decision", Static).content)
+        full = decision_history(match)
+        assert "ply 2" in decisions
+        assert "ply 3" not in decisions
+        assert full[0]["rationale"][:30] in decisions
+        assert "ply 2" in str(app.query_one("#match", Static).content)
 
 
 @pytest.mark.asyncio
