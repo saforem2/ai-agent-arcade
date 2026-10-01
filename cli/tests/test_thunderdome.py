@@ -57,9 +57,22 @@ async def test_braille_board_renders_multiple_rows():
         assert len(lines) >= 20
         assert all(f"{rank} " in str(board.content) for rank in range(1, 9))
         assert not any(symbol in str(board.content) for symbol in "♟♞♝♜♛♚")
-        assert any("⠀" <= char <= "⣿" and char != "⠀" for line in lines for char in line)
         assert any("WHITE" in line for line in lines)
         assert any("BLACK" in line for line in lines)
+        assert any("⠀" <= char <= "⣿" and char != "⠀" for line in lines for char in line)
+
+
+@pytest.mark.asyncio
+async def test_original_board_keeps_the_full_board_pane_after_content_renders():
+    """Auto-sized content used to collapse the board from the pane to 34×21."""
+    app = ArcadeApp(Path(__file__).resolve().parents[2] / "games/chess/match-009", 1, 1, True, run_matches=False)
+    async with app.run_test(size=(150, 46)) as pilot:
+        await pilot.pause()
+        board = app.query_one("#board", BrailleBoard)
+        board_wrap = app.query_one("#board-wrap")
+
+        assert board.size == board_wrap.size
+        assert (board.renderer.CW, board.renderer.CH) == (8, 4)
 
 
 def test_original_board_uses_canonical_engine_renderer():

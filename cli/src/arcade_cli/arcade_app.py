@@ -271,7 +271,12 @@ class ArcadeApp(App):
     Header, Footer { background: #171b24; color: #8a93a6; }
     #body { height: 1fr; }
     #board-wrap { width: 1fr; height: 1fr; align: center middle; border: round #334054; }
-    #board { width: auto; height: auto; text-align: center; content-align: center middle; text-style: bold; }
+    # The board widget must retain the entire pane. The renderer then receives
+    # stable pane dimensions instead of feeding its content dimensions back
+    # into the next render and shrinking from 64×30 to 34×21.
+    # The canonical renderer already centers within the supplied width. Textual
+    # must left-anchor those lines or it centers their leading padding again.
+    #board { width: 100%; height: 100%; content-align: left middle; text-style: bold; }
     #side { width: 46; height: 1fr; }
     .panel { border: round #334054; padding: 1 2; margin-left: 1; }
     #match { height: 11; }

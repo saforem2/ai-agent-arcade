@@ -69,11 +69,9 @@ MOVES, BANNER, CTL = D / 'moves.txt', D / 'banner.txt', D / 'ctl'
 # Geometry is chosen to fit the pane: bigger pane -> more dots per square, so the
 # same artwork gains resolution instead of just more margin. Candidates are in
 # descending size; each is (chars across a square, char rows down a square).
-# Largest first. (6,3) = 12x12 dots/square is the CAP, not just the biggest entry:
-# it is where the 10x12 masters map 1:1 into the sprite box, so the art is at its
-# crispest. A bigger square would only resample the same masters up and go soft, so
-# surplus pane space becomes quiet margin instead (the board stays the object).
-GEOM = ((6, 3), (5, 3), (4, 2), (3, 2))
+# The 10x12 masters remain the source artwork; larger cells resample those
+# silhouettes while preserving their contours and the field's dot geometry.
+GEOM = ((10, 5), (9, 5), (8, 4), (7, 4), (6, 3), (5, 3), (4, 2), (3, 2))
 # cozy caps the same descending list at (4, 2) = 8x8 dots/square, so the board
 # never grows past the small tabletop tier however roomy the pane is.
 GEOM_COZY = ((4, 2), (3, 2))
