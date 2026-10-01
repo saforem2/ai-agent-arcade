@@ -1,7 +1,7 @@
 [project]
-name = "ai-agent-thunderdome"
+name = "ai-agent-arcade"
 version = "0.1.0"
-description = "A single-pane Textual arena for referee-verified model chess matches"
+description = "A single-pane Textual arcade for referee-verified model chess matches"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,9 +11,9 @@ dependencies = [
 ]
 
 [project.scripts]
-thunderdome = "arcade_cli.thunderdome:main"
 arcade = "arcade_cli.main:main"
-thunderdome-series = "arcade_cli.series:main"
+ai-agent-arcade = "arcade_cli.arcade_app:main"
+ai-agent-arcade-series = "arcade_cli.series:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=9", "pytest-asyncio>=1"]

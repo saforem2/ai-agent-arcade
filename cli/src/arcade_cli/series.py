@@ -33,13 +33,13 @@ PLAYERS = {
 
 
 def resolve_root(live=DEFAULT_LIVE):
-    explicit = os.environ.get("THUNDERDOME_ROOT")
+    explicit = os.environ.get("AI_AGENT_ARCADE_ROOT")
     if explicit:
         return Path(explicit).resolve()
     checkout = Path(__file__).resolve().parents[3]
     if (checkout / "engine").is_dir() and (checkout / "cli").is_dir():
         return checkout
-    root = Path(live).resolve().parent / "thunderdome-runtime"
+    root = Path(live).resolve().parent / "ai-agent-arcade-runtime"
     engine = root / "engine"
     if not engine.exists():
         with as_file(files("arcade_cli").joinpath("_engine")) as packaged:

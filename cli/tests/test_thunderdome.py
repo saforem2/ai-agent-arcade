@@ -6,7 +6,7 @@ import chess
 
 pytest.importorskip("textual")
 
-from arcade_cli.thunderdome import BrailleBoard, Thunderdome, decision_history, score_line
+from arcade_cli.arcade_app import ArcadeApp, BrailleBoard, decision_history, score_line
 
 
 def test_score_line_prefers_current_series_summary(tmp_path):
@@ -38,7 +38,7 @@ def test_decision_history_keeps_prior_moves(tmp_path):
 
 @pytest.mark.asyncio
 async def test_braille_board_renders_multiple_rows():
-    app = Thunderdome(Path(__file__).resolve().parents[2] / "games/chess/match-009", 20, 1, True)
+    app = ArcadeApp(Path(__file__).resolve().parents[2] / "games/chess/match-009", 20, 1, True)
     app.start_runner = lambda: None
     async with app.run_test(size=(120, 42)) as pilot:
         await pilot.pause()
@@ -56,7 +56,7 @@ async def test_braille_board_renders_multiple_rows():
 
 @pytest.mark.asyncio
 async def test_board_style_can_toggle_between_original_and_compact():
-    app = Thunderdome(
+    app = ArcadeApp(
         Path(__file__).resolve().parents[2] / "games/chess/match-009",
         20,
         1,
@@ -74,7 +74,7 @@ async def test_board_style_can_toggle_between_original_and_compact():
 @pytest.mark.asyncio
 async def test_textual_app_renders_single_pane_state():
     live = Path(__file__).resolve().parents[2] / "games/chess/match-009"
-    app = Thunderdome(live, 20, 1, True)
+    app = ArcadeApp(live, 20, 1, True)
     app.start_runner = lambda: None
 
     async with app.run_test(size=(120, 42)) as pilot:
@@ -89,7 +89,7 @@ async def test_textual_app_renders_single_pane_state():
 @pytest.mark.asyncio
 async def test_decision_history_is_scrollable_and_navigable():
     live = Path(__file__).resolve().parents[2] / "games/chess/match-009"
-    app = Thunderdome(live, 20, 1, True)
+    app = ArcadeApp(live, 20, 1, True)
     app.start_runner = lambda: None
 
     async with app.run_test(size=(120, 42)) as pilot:

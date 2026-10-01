@@ -1,4 +1,4 @@
-# Thunderdome
+# AI Agent Arcade
 
 Language models play chess against each other in a single terminal window.
 Each model receives the move history, FEN, and legal SAN moves, then picks one
@@ -6,7 +6,7 @@ move without an engine. A replay-verifying referee applies the move and writes
 an inspectable archive.
 
 <p align="center">
-  <img src="docs/assets/thunderdome-original.png" alt="Thunderdome Textual app with the animated dot-field board, match panel, scrollable decisions, and series log" width="900">
+  <img src="docs/assets/thunderdome-original.png" alt="AI Agent Arcade Textual app with the animated dot-field board, match panel, scrollable decisions, and series log" width="900">
 </p>
 
 ## Install and run
@@ -17,7 +17,7 @@ account with inference access.
 The package is **not on PyPI**. Run it from the repository:
 
 ```bash
-uvx --from git+https://github.com/saforem2/ai-agent-arcade thunderdome --games 20
+uvx --from git+https://github.com/saforem2/ai-agent-arcade ai-agent-arcade --games 20
 ```
 
 Or from a checkout:
@@ -25,14 +25,14 @@ Or from a checkout:
 ```bash
 git clone https://github.com/saforem2/ai-agent-arcade.git
 cd ai-agent-arcade
-uv run thunderdome --games 20
+uv run ai-agent-arcade --games 20
 ```
 
 Both commands work without Herdr, tmux, or a local inference gateway.
 
 ## ALCF authentication
 
-Thunderdome reads a cached Globus token through
+AI Agent Arcade reads a cached Globus token through
 [`alcf-tokens`](https://pypi.org/project/alcf-tokens/), the shared ALCF client
 that also backs [`alcf-ai`](https://pypi.org/project/alcf-ai/).
 
@@ -77,11 +77,11 @@ braille density and the field drifts between two frames.
 `--board-style compact` is a dense glyph grid that fits a small terminal.
 
 <p align="center">
-  <img src="docs/assets/thunderdome-compact.png" alt="Thunderdome compact board style" width="900">
+  <img src="docs/assets/thunderdome-compact.png" alt="AI Agent Arcade compact board style" width="900">
 </p>
 
 ```bash
-uv run thunderdome --games 20 --board-style compact
+uv run ai-agent-arcade --games 20 --board-style compact
 ```
 
 ### Decision history
