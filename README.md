@@ -16,7 +16,8 @@ A replay-verifying referee applies the move and writes an inspectable archive.
 
 - A repeatable ALCF series runner for `gpt-oss-120b` and `inkling-bf16`.
 - Alternating colors across a 20-game match.
-- A Herdr wall with one large board and compact match, room, and series panes.
+- A standalone Textual app with the board, match state, move rationale, and
+  series log in one terminal pane. Herdr is optional.
 - Explicit handling for claimable threefold and 50-move draws.
 - Archived move logs, final FENs, chat, staging records, and match metadata.
 - Deterministic README media generated from a verified transcript rather than a
@@ -37,10 +38,35 @@ The current ALCF routes are:
 
 The board is a terminal-native braille field. Pieces, influence, captures, and
 checks are rendered from the same append-only move log that the referee audits.
-The Herdr workspace gives the board 74% of the width. Match state, room chat,
-and the series log share a narrow column; there are no idle player panes.
+The Textual app puts the board beside compact match, rationale, and event
+panels. The same files can still be displayed in a custom Herdr wall.
 
-## Run one match
+## ALCF authentication
+
+Use the shared [`alcf-tokens`](https://pypi.org/project/alcf-tokens/) client.
+It stores and refreshes the Globus token used by
+[`alcf-ai`](https://pypi.org/project/alcf-ai/) and Thunderdome.
+
+```bash
+uvx alcf-tokens login
+uvx alcf-tokens test-token inference
+```
+
+Inspect the currently available endpoints before starting a long series:
+
+```bash
+uvx alcf-ai ls-endpoints
+uvx alcf-ai ls-jobs metis
+uvx alcf-ai ls-jobs minerva
+```
+
+See the official
+[ALCF Inference Endpoints guide](https://docs.alcf.anl.gov/services/inference-endpoints/)
+for access requirements, endpoint status, and troubleshooting. Thunderdome
+reads the cached inference token through `alcf-tokens`; it does not write the
+token to logs or match archives.
+
+## Run the standalone Textual app
 
 Requirements: Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and access to
 the model endpoints you select.
@@ -49,22 +75,29 @@ the model endpoints you select.
 git clone https://github.com/saforem2/ai-agent-arcade.git
 cd ai-agent-arcade
 
-uv run --project cli arcade start chess \
-  --white gpt-oss-120b \
-  --black inkling-bf16 \
-  --host series-host
+uv run thunderdome --games 20
 ```
 
-`arcade start` allocates the next `games/chess/match-NNN/`, deploys the runtime
-to the live directory, initializes the referee, and prints the seating runbook.
+From outside a checkout, run the repository directly:
 
-## Run the 20-game ALCF series
+```bash
+uvx --from git+https://github.com/saforem2/ai-agent-arcade thunderdome --games 20
+```
+
+This launches the board, match status, latest self-reported move rationale, and
+series log in one terminal. It calls the Metis and Minerva OpenAI-compatible
+endpoints directly. It does not require Herdr or a local inference gateway.
+
+Controls: `p` pauses, `c` continues, and `q` exits while leaving a live match
+resumable.
+
+## Run headless
 
 The series runner alternates colors and archives each completed game.
 
 ```bash
 export ARCADE_LIVE=/tmp/alcf-chess-20
-uv run --with chess python cli/run_alcf_series.py \
+uv run python -m arcade_cli.series \
   --games 20 \
   --live-dir "$ARCADE_LIVE"
 ```
@@ -72,7 +105,7 @@ uv run --with chess python cli/run_alcf_series.py \
 Resume after a completed game without replaying earlier games:
 
 ```bash
-uv run --with chess python cli/run_alcf_series.py \
+uv run python -m arcade_cli.series \
   --games 20 \
   --start-index 12 \
   --live-dir "$ARCADE_LIVE"
@@ -82,7 +115,12 @@ The runner writes:
 
 - `$ARCADE_LIVE/series-runner.log`
 - `$ARCADE_LIVE/series-summary.json`
+- `$ARCADE_LIVE/decision_log.jsonl` with concise, self-reported move rationales
 - `games/chess/match-NNN/` for every archived game
+
+`decision_log.jsonl` records the selected move, up to three candidates, one
+sentence of rationale, an expected reply, and token counts. It does not expose
+or claim to reproduce a provider's hidden chain-of-thought.
 
 ## Verify an archive
 

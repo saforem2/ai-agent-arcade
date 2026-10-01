@@ -1,14 +1,10 @@
-import importlib.util
 import json
 import subprocess
 from pathlib import Path
 
 import chess
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "run_alcf_series.py"
-spec = importlib.util.spec_from_file_location("run_alcf_series", MODULE_PATH)
-series = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(series)
+from arcade_cli import series
 
 
 def test_terminal_result_recognizes_claimable_threefold_draw():
@@ -86,6 +82,8 @@ def test_decision_request_uses_low_reasoning_and_room_for_visible_json(monkeypat
             return self.payload
 
     def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["authorization"] = request.headers["Authorization"]
         captured.update(json.loads(request.data))
         return Response(json.dumps({
             "choices": [{"message": {"content": '{"move":"e4"}'}}],
@@ -93,11 +91,15 @@ def test_decision_request_uses_low_reasoning_and_room_for_visible_json(monkeypat
         }).encode())
 
     monkeypatch.setattr(series.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(series, "get_inference_token", lambda: "secret-token")
 
     series.request_decision(series.PLAYERS["gpt-oss"], "choose", 180)
 
     assert captured["reasoning_effort"] == "low"
     assert captured["max_tokens"] == 8192
+    assert captured["url"].endswith("/resource_server/metis/api/v1/chat/completions")
+    assert captured["model"] == "gpt-oss-120b"
+    assert captured["authorization"] == "Bearer secret-token"
 
 
 def test_ask_retries_timeout_and_records_reasoning_usage(tmp_path, monkeypatch):
