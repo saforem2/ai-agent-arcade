@@ -56,7 +56,7 @@ PER_MATCH_TRUNCATE = ["chat.log", "banner.txt", "eval.log", "keeper.log", "ctl"]
 # next match's very first `status` could resolve a player's "last submission"
 # against a dead match's ply and misreport APPLIED/REJECTED.
 PER_MATCH_UNLINK = ["pending.txt", "result.txt", "draw_offer.txt", "TAMPER.txt", "roles.txt",
-                     "host.txt", "director.txt", "stage_log.txt", "menu.txt"]
+                     "host.txt", "director.txt", "stage_log.txt", "menu.txt", "decision_log.jsonl"]
 PER_MATCH_GLOBS = [".stalls_*", ".last_*", ".prompt_out", ".ref_err", ".illegal"]
 # SERIES: cumulative across matches, never cleared. Names are in every line,
 # so it is pairing-agnostic storage read through a pairing filter (head_to_head).
@@ -85,7 +85,7 @@ RESERVED_NAMES = {"ARCADE", "REFEREE", "DIRECTOR", "HOST", "WHITE", "BLACK", "BL
 ARCHIVE_FILES = ["moves.txt", "fen.txt", "chat.log", "results.txt", "names.txt",
                   "seats.txt", "roles.txt", "banner.txt", "series.txt",
                   "result.txt", "eval.log", "keeper.log", "host.txt", "director.txt",
-                  "stage_log.txt"]
+                  "stage_log.txt", "decision_log.jsonl"]
 # Per-game archive extras, keyed by game. Corewar's staged warriors ARE the
 # match evidence: the transcript's LOAD lines carry only their sha256, so an
 # archive without warriors/A.red + warriors/B.red can never be re-verified
@@ -467,7 +467,7 @@ def run_ref_init(live, force, game="chess"):
 # unconditional, so it is included here anyway.
 SNAPSHOT_FILES = ["moves.txt", "fen.txt", "chat.log", "banner.txt", "results.txt",
                    "names.txt", "seats.txt", "eval.log", "keeper.log", "result.txt",
-                   "stage_log.txt", "menu.txt"]
+                   "stage_log.txt", "menu.txt", "decision_log.jsonl"]
 
 
 def snapshot_pre_start(live, newest):

@@ -4,9 +4,10 @@
 import argparse
 import json
 import os
-import re
 import subprocess
 import time
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 import chess
@@ -25,7 +26,7 @@ PLAYERS = {
         "model": "alcf-minerva/inkling-bf16",
     },
 }
-SAN_RE = re.compile(r"(?:O-O-O|O-O|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?)")
+GATEWAY_URL = "http://127.0.0.1:8765/v1/chat/completions"
 
 
 def run(command, *, cwd=ROOT, env=None, timeout=300, check=True):
@@ -62,40 +63,81 @@ def terminal_result(board):
     return outcome.result(), reason
 
 
-def ask(player, board, moves, log):
+def parse_decision(raw, legal):
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    move = data.get("move")
+    if move not in legal:
+        return None
+    candidates = [item for item in data.get("candidate_moves", []) if item in legal][:3]
+    rationale = " ".join(str(data.get("rationale", "")).split())[:280]
+    expected = str(data.get("expected_reply", "")).strip()[:24]
+    return {
+        "move": move,
+        "candidate_moves": candidates,
+        "rationale": rationale,
+        "expected_reply": expected,
+    }
+
+
+def request_decision(player, prompt, timeout):
+    payload = json.dumps({
+        "model": player["model"],
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
+        "max_tokens": 512,
+    }).encode()
+    request = urllib.request.Request(
+        GATEWAY_URL,
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": "Bearer placeholder"},
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = json.load(response)
+    usage = body.get("usage") or {}
+    details = usage.get("completion_tokens_details") or {}
+    return body["choices"][0]["message"]["content"], {
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "reasoning_tokens": details.get("reasoning_tokens"),
+    }
+
+
+def ask(player, board, moves, log, decision_log):
     legal = [board.san(move) for move in board.legal_moves]
     base_prompt = f"""You are {player['name']} in a chess match against another language model.
 No chess engine, tools, code execution, web search, or outside assistance. Analyze the position yourself.
 Moves so far (SAN): {' '.join(moves) if moves else '(none)'}
 FEN: {board.fen()}
 Legal SAN moves: {' '.join(legal)}
-Choose exactly one legal move. Reply with only its SAN token and nothing else."""
+Return JSON only with these fields:
+{{"move":"<legal SAN>","candidate_moves":["<up to 3 legal SAN moves>"],"rationale":"<one concise sentence explaining the choice>","expected_reply":"<one likely legal reply or empty string>"}}
+This is a concise self-reported rationale, not hidden chain-of-thought."""
     for attempt in range(1, 4):
         prompt = base_prompt
         if attempt > 1:
             prompt += "\nYour previous response was invalid. Copy exactly one token from the legal SAN list."
         append(log, f"Ply {len(moves) + 1}: thinking (attempt {attempt})")
-        proc = run(
-            [
-                "hermes",
-                "-z",
-                prompt,
-                "--provider",
-                player["provider"],
-                "--model",
-                player["model"],
-                "--reasoning",
-                "high",
-                "--safe-mode",
-            ],
-            cwd=live_dir,
-        )
-        raw = proc.stdout.strip()
+        try:
+            raw, usage = request_decision(player, prompt, timeout=180)
+        except (subprocess.TimeoutExpired, TimeoutError, urllib.error.URLError) as exc:
+            append(log, f"timeout: {exc}")
+            continue
         append(log, f"response: {raw or '(empty)'}")
-        candidates = [raw.strip("` \n\t.'\"")] + SAN_RE.findall(raw)
-        for candidate in candidates:
-            if candidate in legal:
-                return candidate
+        decision = parse_decision(raw, legal)
+        if decision:
+            row = {
+                "ply": len(moves) + 1,
+                "player": player["name"],
+                "model": player["model"],
+                "fen": board.fen(),
+                **decision,
+                **usage,
+            }
+            append(decision_log, json.dumps(row, ensure_ascii=False))
+            return decision
     raise RuntimeError(f"{player['name']} did not return legal SAN")
 
 
@@ -160,10 +202,17 @@ def archive_match(live, result):
     )
 
 
-def play_one(live, game_index, games_requested, white, black, series_log):
-    started = start_match(live, white, black)
-    append(series_log, started.stdout)
-    match_number = next_match_number()
+def play_one(live, game_index, games_requested, white, black, series_log, resume_live=False):
+    if resume_live:
+        match = current_live_match(white, black)
+        if match is None:
+            raise RuntimeError("--resume-live found no matching live match")
+        match_number = match["match"]
+        append(series_log, f"RESUMING match-{match_number:03d} at ply {len((live / 'moves.txt').read_text().split())}")
+    else:
+        started = start_match(live, white, black)
+        append(series_log, started.stdout)
+        match_number = next_match_number()
     match_path = ROOT / "games/chess" / f"match-{match_number:03d}" / "match.json"
     match = json.loads(match_path.read_text())
     if match["match"] != match_number:
@@ -173,7 +222,11 @@ def play_one(live, game_index, games_requested, white, black, series_log):
         black["name"]: live / "black-model.log",
     }
     for path in logs.values():
-        path.write_text("")
+        if not resume_live:
+            path.write_text("")
+    decision_log = live / "decision_log.jsonl"
+    if not resume_live:
+        decision_log.write_text("")
     post(live, "HOST", f"Series game {game_index}/{games_requested}. {white['name']} has White; {black['name']} has Black.")
     append(series_log, f"GAME {game_index}/{games_requested} match-{match_number:03d}: {white['name']} vs {black['name']}")
     for _ in range(300):
@@ -190,7 +243,8 @@ def play_one(live, game_index, games_requested, white, black, series_log):
                 post(live, "HOST", f"{entry} ({reason}).")
             break
         player = white if len(moves) % 2 == 0 else black
-        san = ask(player, board, moves, logs[player["name"]])
+        decision = ask(player, board, moves, logs[player["name"]], decision_log)
+        san = decision["move"]
         append(series_log, f"  ply {len(moves) + 1}: {player['name']} {san}")
         output = apply_move(live, player, san, logs[player["name"]])
         if "GAMEOVER" in output:
@@ -217,6 +271,21 @@ def next_match_number():
     for path in (ROOT / "games/chess").glob("match-*/match.json"):
         nums.append(int(path.parent.name.split("-")[1]))
     return max(nums)
+
+
+def current_live_match(white, black):
+    wanted = (white["name"], black["name"])
+    matches = []
+    for path in (ROOT / "games/chess").glob("match-*/match.json"):
+        data = json.loads(path.read_text())
+        seats = data.get("seats") or {}
+        names = (
+            (seats.get("white") or {}).get("name"),
+            (seats.get("black") or {}).get("name"),
+        )
+        if data.get("status") == "live" and names == wanted:
+            matches.append(data)
+    return max(matches, key=lambda item: item["match"]) if matches else None
 
 
 def write_summary(path, rows, games_requested):
@@ -257,6 +326,7 @@ def parse_args():
     parser.add_argument("--games", type=int, default=20)
     parser.add_argument("--live-dir", type=Path, default=DEFAULT_LIVE)
     parser.add_argument("--start-index", type=int, default=1)
+    parser.add_argument("--resume-live", action="store_true")
     return parser.parse_args()
 
 
@@ -274,11 +344,21 @@ if __name__ == "__main__":
     else:
         completed = existing_series_rows(next_match_number() - args.start_index + 1)
         append(series_log, f"RESUME at game {args.start_index}/{args.games}")
+    resume_live = args.resume_live
     for game_index in range(args.start_index, args.games + 1):
         if game_index % 2:
             white, black = PLAYERS["gpt-oss"], PLAYERS["inkling"]
         else:
             white, black = PLAYERS["inkling"], PLAYERS["gpt-oss"]
-        completed.append(play_one(live_dir, game_index, args.games, white, black, series_log))
+        completed.append(play_one(
+            live_dir,
+            game_index,
+            args.games,
+            white,
+            black,
+            series_log,
+            resume_live=resume_live,
+        ))
+        resume_live = False
         write_summary(summary, completed, args.games)
     append(series_log, f"SERIES COMPLETE: {args.games} games")

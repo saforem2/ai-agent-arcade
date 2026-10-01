@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import subprocess
 from pathlib import Path
 
 import chess
@@ -25,3 +27,81 @@ def test_terminal_result_uses_native_checkmate():
         board.push_san(san)
 
     assert series.terminal_result(board) == ("0-1", "checkmate")
+
+
+def test_parse_decision_keeps_concise_self_reported_rationale():
+    raw = json.dumps({
+        "move": "Nf3",
+        "candidate_moves": ["Nf3", "e4"],
+        "rationale": "Develops a piece and controls e5.",
+        "expected_reply": "Nf6",
+    })
+
+    decision = series.parse_decision(raw, ["Nf3", "e4", "d4"])
+
+    assert decision == {
+        "move": "Nf3",
+        "candidate_moves": ["Nf3", "e4"],
+        "rationale": "Develops a piece and controls e5.",
+        "expected_reply": "Nf6",
+    }
+
+
+def test_parse_decision_rejects_move_outside_legal_list():
+    raw = json.dumps({"move": "Qh5", "rationale": "Attack f7."})
+
+    assert series.parse_decision(raw, ["Nf3", "e4"]) is None
+
+
+def test_ask_retries_timeout_and_records_reasoning_usage(tmp_path, monkeypatch):
+    board = chess.Board()
+    calls = []
+
+    def fake_request(player, prompt, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(["gateway"], timeout)
+        return (
+            json.dumps({
+                "move": "Nf3",
+                "candidate_moves": ["Nf3", "e4"],
+                "rationale": "Develops and controls e5.",
+                "expected_reply": "Nf6",
+            }),
+            {"reasoning_tokens": 23},
+        )
+
+    monkeypatch.setattr(series, "request_decision", fake_request)
+    model_log = tmp_path / "model.log"
+    decision_log = tmp_path / "decision_log.jsonl"
+
+    decision = series.ask(
+        series.PLAYERS["gpt-oss"], board, [], model_log, decision_log
+    )
+
+    assert decision["move"] == "Nf3"
+    assert calls == [180, 180]
+    row = json.loads(decision_log.read_text())
+    assert row["reasoning_tokens"] == 23
+    assert row["rationale"] == "Develops and controls e5."
+    assert "timeout" in model_log.read_text().lower()
+
+
+def test_current_live_match_requires_matching_seats(tmp_path, monkeypatch):
+    match_dir = tmp_path / "games/chess/match-026"
+    match_dir.mkdir(parents=True)
+    (match_dir / "match.json").write_text(json.dumps({
+        "match": 26,
+        "status": "live",
+        "seats": {
+            "white": {"name": "INKLING-BF16"},
+            "black": {"name": "GPT-OSS-120B"},
+        },
+    }))
+    monkeypatch.setattr(series, "ROOT", tmp_path)
+
+    match = series.current_live_match(
+        series.PLAYERS["inkling"], series.PLAYERS["gpt-oss"]
+    )
+
+    assert match["match"] == 26

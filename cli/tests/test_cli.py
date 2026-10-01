@@ -148,6 +148,28 @@ def test_archive_round_trip(env):
     assert data2["result"] == "CODEX 1-0 KIMI (resign)"
 
 
+def test_archive_preserves_decision_log(env):
+    root, live = env
+    start(root, live)
+    decision = '{"ply": 1, "move": "e4", "rationale": "Claims the center."}\n'
+    (live / "decision_log.jsonl").write_text(decision)
+
+    m.cmd_archive(FakeArgs(root, live, result="KIMI 1-0 CODEX"))
+
+    archived = root / "games/chess/match-001/decision_log.jsonl"
+    assert archived.read_text() == decision
+
+
+def test_start_clears_previous_decision_log(env):
+    root, live = env
+    start(root, live)
+    (live / "decision_log.jsonl").write_text('{"ply": 1}\n')
+
+    start(root, live, force=True)
+
+    assert not (live / "decision_log.jsonl").exists()
+
+
 @pytest.fixture
 def archive_scratch(monkeypatch):
     """Fresh archive-regression tree, made by mktemp under the safe root."""
