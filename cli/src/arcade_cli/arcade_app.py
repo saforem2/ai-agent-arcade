@@ -144,13 +144,19 @@ class BrailleBoard(Static):
         self.replay_moves = []
         self.replay_index = 0
         self.replay_next = 0.0
+        # Recording hook: when set, the widget reads this instead of the wall
+        # clock so an exporter can advance animation one frame at a time.
+        self.clock = None
+
+    def _now(self) -> float:
+        return self.clock() if self.clock else time.monotonic()
 
     def on_mount(self) -> None:
         self.set_interval(0.05, self.tick_frame)
 
     def tick_frame(self) -> None:
         if self.style_name == "original":
-            now = time.monotonic()
+            now = self._now()
             if self.replay_moves and not self.fly_animation and now >= self.replay_next:
                 if self.replay_index >= len(self.replay_moves):
                     self.replay_moves = []
@@ -166,7 +172,7 @@ class BrailleBoard(Static):
                     self.board = after
                     self.moves = self.replay_moves[:self.replay_index]
                     self.replay_next = now + 0.7
-            if self.fly_animation and time.monotonic() - self.fly_animation[0] >= 0.5:
+            if self.fly_animation and now - self.fly_animation[0] >= 0.5:
                 self.renderer.last_pair = (
                     self.fly_animation[1].from_square,
                     self.fly_animation[1].to_square,
@@ -197,7 +203,7 @@ class BrailleBoard(Static):
             for san in self.moves:
                 before.push_san(san)
             move = before.parse_san(new_moves[-1])
-            self.fly_animation = (time.monotonic(), move, before)
+            self.fly_animation = (self._now(), move, before)
         self.board = board.copy(stack=False)
         self.white = white
         self.black = black
@@ -213,7 +219,7 @@ class BrailleBoard(Static):
     def _paint_original(self) -> None:
         cols = max(29, self.size.width or 80)
         rows = max(19, self.size.height or 40)
-        now = time.monotonic()
+        now = self._now()
         board, fly = self.board, None
         if self.fly_animation:
             started, move, before = self.fly_animation

@@ -6,8 +6,16 @@ move without an engine. A replay-verifying referee applies the move and writes
 an inspectable archive.
 
 <p align="center">
-  <img src="docs/assets/thunderdome-original.png" alt="AI Agent Arcade Textual app with the animated dot-field board, match panel, scrollable decisions, and series log" width="900">
+  <img src="docs/assets/arcade-tui.gif" alt="AI Agent Arcade Textual app replaying a verified match: animated dot-field board, match panel, scrollable decisions, and series log" width="900">
 </p>
+
+The recording above is the real Textual app replaying archived `match-009`,
+captured frame-by-frame through Textual's own `App.export_screenshot()`.
+Regenerate it with:
+
+```bash
+uv run --with pillow python cli/record_tui_gif.py games/chess/match-009
+```
 
 ## Install and run
 

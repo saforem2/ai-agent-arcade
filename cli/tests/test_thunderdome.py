@@ -98,6 +98,44 @@ async def test_new_move_starts_canonical_fly_animation():
 
 
 @pytest.mark.asyncio
+async def test_virtual_clock_drives_replay_deterministically():
+    """The recorder swaps in a virtual clock; animation must follow it, not wall time."""
+    app = ArcadeApp(Path(__file__).resolve().parents[2] / "games/chess/match-009", 20, 1, True)
+    app.start_runner = lambda: None
+    async with app.run_test(size=(120, 42)) as pilot:
+        await pilot.pause()
+        app.refresh_state()
+        await pilot.pause()
+
+        widget = app.query_one("#board", BrailleBoard)
+        virtual = {"t": 0.0}
+        widget.clock = lambda: virtual["t"]
+        widget.start_replay()
+
+        widget.tick_frame()
+        assert widget.replay_index == 1
+        first = widget.fly_animation[1]
+
+        # Mid-flight: still the same move, still animating.
+        virtual["t"] = 0.25
+        widget.tick_frame()
+        assert widget.fly_animation is not None
+        assert widget.fly_animation[1] == first
+
+        # Past the 0.5s travel window the move lands and last_pair is set.
+        virtual["t"] = 0.6
+        widget.tick_frame()
+        assert widget.fly_animation is None
+        assert widget.renderer.last_pair == (first.from_square, first.to_square)
+
+        # Past the 0.7s cadence the next move starts.
+        virtual["t"] = 0.8
+        widget.tick_frame()
+        assert widget.replay_index == 2
+        assert widget.fly_animation[1] != first
+
+
+@pytest.mark.asyncio
 async def test_board_style_can_toggle_between_original_and_compact():
     app = ArcadeApp(
         Path(__file__).resolve().parents[2] / "games/chess/match-009",
