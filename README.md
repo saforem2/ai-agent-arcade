@@ -54,8 +54,10 @@ Press `R` in the running app to do the same thing without restarting it.
 
 Reset never deletes evidence. The partial transcript (moves, decisions, names,
 FEN, runner log) is copied to `<live-dir>/abandoned/<timestamp>/` with a
-`reason.txt` first, and archived matches under `games/` are untouched. The
-headless runner takes the same flag:
+`reason.txt` first, and completed archives under `games/` are untouched. The
+orphaned match record is flipped from `live` to `abandoned` so the next game
+is not blocked by `match-NNN is still live`. The headless runner takes the
+same flag:
 
 ```bash
 uv run python -m arcade_cli.series --reset --games 20 --live-dir "$ARCADE_LIVE"

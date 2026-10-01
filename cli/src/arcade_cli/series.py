@@ -521,6 +521,29 @@ RESET_UNLINK = ("pending.txt", "series-summary.json")
 RESET_PRESERVE = ("moves.txt", "decision_log.jsonl", "names.txt", "series-runner.log", "fen.txt")
 
 
+def abandon_live_matches(reason="reset"):
+    """Flip any match record still marked ``live`` to ``abandoned``.
+
+    ``arcade start`` refuses when the newest match is still ``live``, so
+    clearing only the live directory strands the next game behind
+    "match-NNN is still live — pass --force to override".
+    """
+    abandoned = []
+    for path in (ROOT / "games/chess").glob("match-*/match.json"):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("status") != "live":
+            continue
+        data["status"] = "abandoned"
+        data["result"] = f"abandoned by {reason}"
+        data["ended"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        path.write_text(json.dumps(data, indent=2) + "\n")
+        abandoned.append(path.parent.name)
+    return abandoned
+
+
 def reset_live(live):
     """Abandon whatever is in ``live`` and return to a clean pre-game state.
 
@@ -549,6 +572,7 @@ def reset_live(live):
         (live / name).unlink(missing_ok=True)
     for stale in live.glob("pending.stale.*.txt"):
         stale.unlink(missing_ok=True)
+    abandon_live_matches()
     return saved
 
 

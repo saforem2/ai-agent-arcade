@@ -336,3 +336,41 @@ def test_reset_live_on_an_empty_directory_archives_nothing(tmp_path):
     (live / "moves.txt").write_text("")
 
     assert series.reset_live(live) is None
+
+
+def test_reset_live_marks_the_orphaned_match_abandoned(tmp_path, monkeypatch):
+    """Clearing the live dir alone leaves match.json 'live', and the next
+    `arcade start` then refuses with 'match-NNN is still live'."""
+    root = tmp_path / "runtime"
+    match_dir = root / "games/chess/match-002"
+    match_dir.mkdir(parents=True)
+    (match_dir / "match.json").write_text(json.dumps({
+        "game": "chess", "match": 2, "status": "live", "result": None, "ended": None,
+    }))
+    monkeypatch.setattr(series, "ROOT", root)
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "moves.txt").write_text("e4 e5\n")
+
+    series.reset_live(live)
+
+    record = json.loads((match_dir / "match.json").read_text())
+    assert record["status"] == "abandoned"
+    assert record["ended"]
+    assert "reset" in (record.get("result") or "")
+
+
+def test_reset_live_leaves_completed_matches_untouched(tmp_path, monkeypatch):
+    root = tmp_path / "runtime"
+    match_dir = root / "games/chess/match-002"
+    match_dir.mkdir(parents=True)
+    record = {"game": "chess", "match": 2, "status": "complete", "result": "A 1-0 B"}
+    (match_dir / "match.json").write_text(json.dumps(record))
+    monkeypatch.setattr(series, "ROOT", root)
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "moves.txt").write_text("e4\n")
+
+    series.reset_live(live)
+
+    assert json.loads((match_dir / "match.json").read_text()) == record

@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 51,
+  "started": "2026-10-01T00:37:49",
+  "seats": {
+    "white": {
+      "agent": "gpt-oss-120b",
+      "name": "GPT-OSS-120B"
+    },
+    "black": {
+      "agent": "inkling-bf16",
+      "name": "INKLING-BF16"
+    }
+  },
+  "host": {
+    "agent": "series-host",
+    "name": "HOST"
+  },
+  "live_dir": "/Users/sam/projects/saforem2/arcade/.ai-agent-arcade/live",
+  "status": "complete",
+  "result": "GPT-OSS-120B 1/2-1/2 INKLING-BF16",
+  "ended": "2026-10-01T00:40:00"
+}
