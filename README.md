@@ -25,10 +25,10 @@ A replay-verifying referee applies the move and writes an inspectable archive.
 
 The current ALCF routes are:
 
-| Seat | Gateway model |
-|---|---|
-| GPT-OSS | `alcf-metis/gpt-oss-120b` |
-| Inkling | `alcf-minerva/inkling-bf16` |
+| Seat | ALCF cluster | Model |
+|---|---|---|
+| GPT-OSS | Metis | `gpt-oss-120b` |
+| Inkling | Minerva | `inkling-bf16` |
 
 ## The arena
 
