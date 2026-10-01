@@ -46,7 +46,10 @@ async def test_braille_board_renders_multiple_rows():
         board.update_position(chess.Board(), "WHITE", "BLACK")
         lines = str(board.content).splitlines()
 
-        assert len(lines) >= 12
+        assert len(lines) == 29
+        assert all(len(line) >= 51 for line in lines[2:26])
+        assert not any(symbol in str(board.content) for symbol in "♟♞♝♜♛♚")
+        assert any("⣿" in line or "⣶" in line for line in lines)
         assert any("WHITE" in line for line in lines)
         assert any("BLACK" in line for line in lines)
 
@@ -79,7 +82,7 @@ async def test_textual_app_renders_single_pane_state():
         app.refresh_state()
 
         assert "GPT-OSS-120B" in str(app.query_one("#match").content)
-        assert "♜" in str(app.query_one("#board").content)
+        assert "⣿" in str(app.query_one("#board").content)
         assert "DECISIONS" in str(app.query_one("#decision").content)
 
 

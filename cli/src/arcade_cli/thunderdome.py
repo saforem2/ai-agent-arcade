@@ -100,7 +100,15 @@ class BrailleBoard(Static):
     """Board widget with an original dot-field style and a compact glyph style."""
 
     GLYPHS = {1: "●", 2: "◆", 3: "▲", 4: "■", 5: "✦", 6: "♚"}
-    FIGURES = {1: "♟", 2: "♞", 3: "♝", 4: "♜", 5: "♛", 6: "♚"}
+    SPRITES = {
+        1: ("  ██  ", " ████ ", "  ██  ", " ████ ", "██████"),
+        2: ("  ███ ", " █████", "██ ███", "   ███", " █████"),
+        3: ("  ██  ", " ████ ", " ██ █ ", " ████ ", "██████"),
+        4: ("██  ██", "██████", " ████ ", " ████ ", "██████"),
+        5: ("█ ██ █", "██████", " ████ ", "  ██  ", "██████"),
+        6: ("  ██  ", "██████", "  ██  ", " ████ ", "██████"),
+    }
+    DOT_BITS = ((0x01, 0x02, 0x04, 0x40), (0x08, 0x10, 0x20, 0x80))
 
     def __init__(self, style: str = "original", **kwargs):
         super().__init__(**kwargs)
@@ -135,33 +143,57 @@ class BrailleBoard(Static):
         self._paint_original()
 
     def _paint_original(self) -> None:
-        """Dot-field board: squares are braille density, pieces are solid dots."""
+        """Render one coherent braille canvas; pieces and squares share its dot grid."""
         text = Text(justify="center")
         text.append(f"{self.black}\n\n", style="bold #f0a046")
-        drift = self.phase
-        rows_per_square = 4
-        for rank in range(7, -1, -1):
-            for row in range(rows_per_square):
-                label = f"{rank + 1} " if row == 2 else "  "
-                text.append(label, style="#697386")
-                for file in range(8):
-                    square = chess.square(file, rank)
-                    piece = self.board.piece_at(square)
-                    light = (file + rank) % 2
-                    if piece and row == 2:
-                        glyph = self.FIGURES[piece.piece_type]
-                        style = "bold #f2fbff" if piece.color else "bold #ffb03e"
-                        text.append(f"   {glyph}    ", style=style)
-                        continue
-                    if light:
-                        cell = "⣿⣿⣿⣿" if (row + drift) % 2 == 0 else "⣷⣿⣿⣯"
-                        style = "#5a6d88"
-                    else:
-                        cell = "⢀⣀⣀⢀" if (row + drift) % 2 == 0 else "⡀⢀⢀⡀"
-                        style = "#303d52"
-                    text.append(f" {cell}  ", style=style)
-                text.append("\n")
-        text.append("\n     a      b      c      d      e      f      g      h\n", style="#697386")
+        cw, ch = 6, 3
+        width, height = cw * 8, ch * 8
+        bits = [[0 for _ in range(width)] for _ in range(height)]
+        colors = [["#53657f" for _ in range(width)] for _ in range(height)]
+
+        def set_dot(x: int, y: int, color: str) -> None:
+            if 0 <= x < width * 2 and 0 <= y < height * 4:
+                cx, cy = x // 2, y // 4
+                bits[cy][cx] |= self.DOT_BITS[x % 2][y % 4]
+                colors[cy][cx] = color
+
+        # A single ordered lattice gives every square identical pitch and edges.
+        for rank in range(8):
+            for file in range(8):
+                light = (file + rank) % 2
+                density = 4 if light else 2
+                color = "#53657f" if light else "#334156"
+                x0, y0 = file * cw * 2, (7 - rank) * ch * 4
+                for y in range(ch * 4):
+                    for x in range(cw * 2):
+                        threshold = ((0, 4), (6, 2), (1, 5), (7, 3))[y % 4][x % 2]
+                        if threshold < density:
+                            set_dot(x0 + x, y0 + y, color)
+
+        # Purpose-built dot silhouettes replace font-dependent Unicode pieces.
+        for square, piece in self.board.piece_map().items():
+            file, rank = chess.square_file(square), chess.square_rank(square)
+            x0, y0 = file * cw * 2 + 1, (7 - rank) * ch * 4 + 1
+            sprite = self.SPRITES[piece.piece_type]
+            color = "#f2fbff" if piece.color else "#ffb03e"
+            for sy, row in enumerate(sprite):
+                for sx, value in enumerate(row):
+                    if value != " ":
+                        # Two vertical dots add weight without breaking the lattice.
+                        set_dot(x0 + sx, y0 + sy * 2, color)
+                        set_dot(x0 + sx, y0 + sy * 2 + 1, color)
+
+        for cy in range(height):
+            text.append(f"{8 - cy // ch}  " if cy % ch == ch // 2 else "   ", style="#8490a4")
+            last_color = None
+            for cx in range(width):
+                color = colors[cy][cx]
+                if color != last_color:
+                    text.append("", style=color)
+                    last_color = color
+                text.append(chr(0x2800 + bits[cy][cx]), style=color)
+            text.append("\n")
+        text.append("\n   " + "".join(f"{file:^{cw}}" for file in "abcdefgh") + "\n", style="#8490a4")
         text.append(self.white, style="bold #f2fbff")
         super().update(text)
 
