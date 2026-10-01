@@ -69,6 +69,37 @@ def test_parse_decision_accepts_json_from_reasoning_field():
     assert series.parse_decision(raw, ["e4", "Nf3"])["move"] == "e4"
 
 
+def test_decision_request_uses_low_reasoning_and_room_for_visible_json(monkeypatch):
+    captured = {}
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return self.payload
+
+    def fake_urlopen(request, timeout):
+        captured.update(json.loads(request.data))
+        return Response(json.dumps({
+            "choices": [{"message": {"content": '{"move":"e4"}'}}],
+            "usage": {},
+        }).encode())
+
+    monkeypatch.setattr(series.urllib.request, "urlopen", fake_urlopen)
+
+    series.request_decision(series.PLAYERS["gpt-oss"], "choose", 180)
+
+    assert captured["reasoning_effort"] == "low"
+    assert captured["max_tokens"] == 4096
+
+
 def test_ask_retries_timeout_and_records_reasoning_usage(tmp_path, monkeypatch):
     board = chess.Board()
     calls = []

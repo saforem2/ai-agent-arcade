@@ -88,7 +88,7 @@ def request_decision(player, prompt, timeout):
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
         "reasoning_effort": "low",
-        "max_tokens": 512,
+        "max_tokens": 4096,
     }).encode()
     request = urllib.request.Request(
         GATEWAY_URL,
