@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.request
 import urllib.error
 import shutil
@@ -22,14 +23,71 @@ PLAYERS = {
         "provider": "llm-rosetta",
         "model": "gpt-oss-120b",
         "endpoint": "https://inference-api.alcf.anl.gov/resource_server/metis/api/v1/chat/completions",
+        "harness": "alcf",
+        "effort": "low",
+        "api_key": None,
     },
     "inkling": {
         "name": "INKLING-BF16",
         "provider": "llm-rosetta",
         "model": "inkling-bf16",
         "endpoint": "https://inference-api.alcf.anl.gov/resource_server/minerva/api/v1/chat/completions",
+        "harness": "alcf",
+        "effort": "low",
+        "api_key": None,
     },
 }
+
+
+def _chat_endpoint(base_url):
+    base = str(base_url).rstrip("/")
+    return base if base.endswith("/chat/completions") else base + "/chat/completions"
+
+
+def load_players(config_path=None):
+    if config_path is None:
+        return [dict(PLAYERS["gpt-oss"]), dict(PLAYERS["inkling"])]
+    with Path(config_path).open("rb") as handle:
+        data = tomllib.load(handle)
+    if data.get("version") != 1:
+        raise ValueError("match config must set version = 1")
+    configured = data.get("players") or {}
+    if len(configured) != 2:
+        raise ValueError("match config must define exactly two [players.*] tables")
+    players = []
+    for key, raw in configured.items():
+        missing = [field for field in ("name", "harness", "base_url", "model") if not raw.get(field)]
+        if missing:
+            raise ValueError(f"player {key} missing: {', '.join(missing)}")
+        if any(char.isspace() for char in raw["name"]):
+            raise ValueError(f"player {key}: name must not contain whitespace")
+        if raw.get("api_key") and raw.get("api_key_env"):
+            raise ValueError(f"player {key}: api_key and api_key_env are mutually exclusive")
+        harness = raw["harness"]
+        if harness not in ("openai", "alcf"):
+            raise ValueError(f"player {key}: unsupported harness {harness!r}")
+        api_key = raw.get("api_key")
+        if raw.get("api_key_env"):
+            api_key = os.environ.get(raw["api_key_env"])
+            if not api_key:
+                raise ValueError(f"player {key}: environment variable {raw['api_key_env']} is not set")
+        players.append({
+            "name": raw["name"],
+            "harness": harness,
+            "endpoint": _chat_endpoint(raw["base_url"]),
+            "model": raw["model"],
+            "effort": raw.get("effort"),
+            "api_key": api_key,
+        })
+    return players
+
+
+def _packaged_engine_version():
+    try:
+        from importlib.metadata import version
+        return version("ai-agent-arcade")
+    except Exception:
+        return "dev"
 
 
 def resolve_root(live=DEFAULT_LIVE):
@@ -39,7 +97,7 @@ def resolve_root(live=DEFAULT_LIVE):
     checkout = Path(__file__).resolve().parents[3]
     if (checkout / "engine").is_dir() and (checkout / "cli").is_dir():
         return checkout
-    root = Path(live).resolve().parent / "ai-agent-arcade-runtime"
+    root = Path(live).resolve().parent / f"ai-agent-arcade-runtime-{_packaged_engine_version()}"
     engine = root / "engine"
     if not engine.exists():
         with as_file(files("arcade_cli").joinpath("_engine")) as packaged:
@@ -122,17 +180,23 @@ def get_inference_token():
 
 
 def request_decision(player, prompt, timeout):
-    payload = json.dumps({
+    body = {
         "model": player["model"],
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
-        "reasoning_effort": "low",
         "max_tokens": 8192,
-    }).encode()
+    }
+    if player.get("effort"):
+        body["reasoning_effort"] = player["effort"]
+    payload = json.dumps(body).encode()
+    api_key = get_inference_token() if player.get("harness") == "alcf" else player.get("api_key")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     request = urllib.request.Request(
         player["endpoint"],
         data=payload,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {get_inference_token()}"},
+        headers=headers,
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         body = json.load(response)
@@ -207,6 +271,21 @@ def apply_move(live, player, san, log):
     return applied.stdout
 
 
+def reconcile_pending(live, player, board, log):
+    pending_path = live / "pending.txt"
+    if not pending_path.exists():
+        return False
+    parts = pending_path.read_text().strip().split("\t", 1)
+    legal = [board.san(move) for move in board.legal_moves]
+    if len(parts) != 2 or parts[0] != player["name"] or parts[1] not in legal:
+        quarantine = live / f"pending.stale.{int(time.time())}.txt"
+        pending_path.replace(quarantine)
+        append(log, f"quarantined stale pending move as {quarantine.name}")
+        return False
+    apply_move(live, player, parts[1], log)
+    return True
+
+
 def start_match(live, white, black):
     env = {
         **os.environ,
@@ -258,7 +337,7 @@ def archive_match(live, result):
 
 def play_one(live, game_index, games_requested, white, black, series_log, resume_live=False):
     if resume_live:
-        match = current_live_match(white, black)
+        match = current_live_match(white, black, live)
         if match is None:
             raise RuntimeError("--resume-live found no matching live match")
         match_number = match["match"]
@@ -297,6 +376,8 @@ def play_one(live, game_index, games_requested, white, black, series_log, resume
                 post(live, "HOST", f"{entry} ({reason}).")
             break
         player = white if len(moves) % 2 == 0 else black
+        if reconcile_pending(live, player, board, logs[player["name"]]):
+            continue
         decision = ask(player, board, moves, logs[player["name"]], decision_log)
         san = decision["move"]
         append(series_log, f"  ply {len(moves) + 1}: {player['name']} {san}")
@@ -327,7 +408,7 @@ def next_match_number():
     return max(nums)
 
 
-def current_live_match(white, black):
+def current_live_match(white, black, live=None):
     wanted = (white["name"], black["name"])
     matches = []
     for path in (ROOT / "games/chess").glob("match-*/match.json"):
@@ -339,11 +420,21 @@ def current_live_match(white, black):
         )
         if data.get("status") == "live" and names == wanted:
             matches.append(data)
+    if not matches and live is not None:
+        names_path = Path(live) / "names.txt"
+        moves_path = Path(live) / "moves.txt"
+        if names_path.exists() and tuple(names_path.read_text().split()) == wanted and moves_path.exists():
+            try:
+                live_match = int((Path(live) / "series.txt").read_text().strip())
+            except (OSError, ValueError):
+                live_match = next_match_number()
+            return {"match": live_match, "status": "live"}
     return max(matches, key=lambda item: item["match"]) if matches else None
 
 
-def write_summary(path, rows, games_requested):
-    wins = {PLAYERS["gpt-oss"]["name"]: 0, PLAYERS["inkling"]["name"]: 0}
+def write_summary(path, rows, games_requested, players=None):
+    players = players or [PLAYERS["gpt-oss"], PLAYERS["inkling"]]
+    wins = {player["name"]: 0 for player in players}
     draws = 0
     for _, result in rows:
         first, score, second = result.split()[:3]
@@ -381,12 +472,14 @@ def parse_args():
     parser.add_argument("--live-dir", type=Path, default=DEFAULT_LIVE)
     parser.add_argument("--start-index", type=int, default=1)
     parser.add_argument("--resume-live", action="store_true")
+    parser.add_argument("--config", type=Path)
     return parser.parse_args()
 
 
-def main():
+def run_series():
     global live_dir, ROOT
     args = parse_args()
+    players = load_players(args.config)
     live_dir = args.live_dir.resolve()
     ROOT = resolve_root(live_dir)
     live_dir.mkdir(parents=True, exist_ok=True)
@@ -394,7 +487,7 @@ def main():
     summary = live_dir / "series-summary.json"
     if args.start_index < 1 or args.start_index > args.games:
         raise SystemExit("--start-index must be between 1 and --games")
-    if args.start_index == 1:
+    if args.start_index == 1 and not args.resume_live:
         series_log.write_text("")
         completed = []
     else:
@@ -403,9 +496,9 @@ def main():
     resume_live = args.resume_live
     for game_index in range(args.start_index, args.games + 1):
         if game_index % 2:
-            white, black = PLAYERS["gpt-oss"], PLAYERS["inkling"]
+            white, black = players
         else:
-            white, black = PLAYERS["inkling"], PLAYERS["gpt-oss"]
+            white, black = players[1], players[0]
         completed.append(play_one(
             live_dir,
             game_index,
@@ -416,8 +509,18 @@ def main():
             resume_live=resume_live,
         ))
         resume_live = False
-        write_summary(summary, completed, args.games)
+        write_summary(summary, completed, args.games, players)
     append(series_log, f"SERIES COMPLETE: {args.games} games")
+
+
+def main():
+    try:
+        run_series()
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
+    except (ValueError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", None) or str(exc)
+        raise SystemExit(f"ai-agent-arcade: {detail.strip()}") from None
 
 
 if __name__ == "__main__":

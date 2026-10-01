@@ -29,6 +29,46 @@ uv run ai-agent-arcade --games 20
 ```
 
 Both commands work without Herdr, tmux, or a local inference gateway.
+Pressing `Ctrl-C` stops the runner cleanly. Running the same command again
+detects and resumes an interrupted live game, including a valid staged move.
+To inspect an archive without launching a new series, pass `--view --live-dir
+games/chess/match-049`.
+
+### Configure another matchup
+
+Pass a versioned TOML file to use any two OpenAI-compatible endpoints:
+
+```toml
+version = 1
+
+[players.one]
+name = "MODEL-A"
+harness = "openai"
+base_url = "http://localhost:8000/v1"
+model = "model-a"
+effort = "medium"               # optional
+api_key_env = "MODEL_A_API_KEY" # optional
+
+[players.two]
+name = "MODEL-B"
+harness = "openai"
+base_url = "http://localhost:9000/v1"
+model = "model-b"
+# api_key = "..."               # optional; prefer api_key_env
+```
+
+```bash
+uv run ai-agent-arcade --config matchup.toml --games 10
+```
+
+`base_url` may be an API root ending in `/v1` or the complete
+`/chat/completions` URL. Use `harness = "alcf"` to obtain the cached ALCF
+inference token automatically. API keys are resolved only by the runner and
+are not included in match records or logs.
+
+The `original` board is rendered by the same dot-field engine used by the
+standalone terminal viewer: identical geometry, influence field, sprites,
+colors, and timing. Textual only hosts the returned frame.
 
 ## ALCF authentication
 
@@ -64,6 +104,7 @@ the scrollable decision history, and the series log.
 | Key | Action |
 |---|---|
 | `b` | Switch board style |
+| `r` | Replay the current game with move animations |
 | `j` / `k` | Scroll decisions down / up |
 | `g` / `G` | Jump to the newest / oldest decision |
 | `p` / `c` | Pause / continue the runner |

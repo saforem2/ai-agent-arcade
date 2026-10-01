@@ -3,8 +3,94 @@ import subprocess
 from pathlib import Path
 
 import chess
+import pytest
 
 from arcade_cli import series
+
+
+def test_load_config_supports_arbitrary_openai_players(tmp_path, monkeypatch):
+    config = tmp_path / "match.toml"
+    config.write_text('''
+version = 1
+[players.one]
+name = "MODEL-ONE"
+harness = "openai"
+base_url = "http://localhost:8000/v1"
+model = "model-one"
+effort = "medium"
+api_key_env = "MODEL_ONE_KEY"
+[players.two]
+name = "MODEL-TWO"
+harness = "openai"
+base_url = "http://localhost:9000/v1/chat/completions"
+model = "model-two"
+''')
+    monkeypatch.setenv("MODEL_ONE_KEY", "secret")
+
+    players = series.load_players(config)
+
+    assert players[0]["endpoint"] == "http://localhost:8000/v1/chat/completions"
+    assert players[0]["api_key"] == "secret"
+    assert players[0]["effort"] == "medium"
+    assert players[1]["api_key"] is None
+
+
+def test_load_config_rejects_missing_api_key_env(tmp_path):
+    config = tmp_path / "match.toml"
+    config.write_text('''
+version = 1
+[players.one]
+name = "One"
+harness = "openai"
+base_url = "http://localhost:8000/v1"
+model = "one"
+api_key_env = "MISSING_ARCADE_KEY"
+[players.two]
+name = "Two"
+harness = "openai"
+base_url = "http://localhost:9000/v1"
+model = "two"
+''')
+
+    with pytest.raises(ValueError, match="MISSING_ARCADE_KEY"):
+        series.load_players(config)
+
+
+def test_request_decision_omits_optional_auth_and_effort(monkeypatch):
+    captured = {}
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": "{}"}}]}).encode()
+
+    def fake_urlopen(request, timeout):
+        captured["headers"] = dict(request.headers)
+        captured["payload"] = json.loads(request.data)
+        return Response()
+
+    monkeypatch.setattr(series.urllib.request, "urlopen", fake_urlopen)
+    series.request_decision({
+        "name": "Local", "harness": "openai", "endpoint": "http://localhost/v1/chat/completions",
+        "model": "local", "api_key": None, "effort": None,
+    }, "choose", 10)
+
+    assert "Authorization" not in captured["headers"]
+    assert "reasoning_effort" not in captured["payload"]
+
+
+def test_reconcile_pending_applies_staged_current_move(tmp_path, monkeypatch):
+    (tmp_path / "pending.txt").write_text("WHITE\tNf3\n")
+    applied = []
+    monkeypatch.setattr(series, "apply_move", lambda live, player, san, log: applied.append(san))
+
+    handled = series.reconcile_pending(
+        tmp_path, {"name": "WHITE"}, chess.Board(), tmp_path / "model.log"
+    )
+
+    assert handled is True
+    assert applied == ["Nf3"]
 
 
 def test_terminal_result_recognizes_claimable_threefold_draw():
@@ -154,3 +240,29 @@ def test_current_live_match_requires_matching_seats(tmp_path, monkeypatch):
     )
 
     assert match["match"] == 26
+
+
+def test_current_live_match_falls_back_to_installed_live_directory(tmp_path, monkeypatch):
+    root = tmp_path / "runtime"
+    (root / "games/chess").mkdir(parents=True)
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "names.txt").write_text("GPT-OSS-120B INKLING-BF16\n")
+    (live / "moves.txt").write_text("Nf3 Nf6\n")
+    (live / "series.txt").write_text("1\n")
+    monkeypatch.setattr(series, "ROOT", root)
+
+    match = series.current_live_match(
+        series.PLAYERS["gpt-oss"], series.PLAYERS["inkling"], live
+    )
+
+    assert match == {"match": 1, "status": "live"}
+
+
+def test_main_turns_keyboard_interrupt_into_clean_exit(monkeypatch):
+    monkeypatch.setattr(series, "run_series", lambda: (_ for _ in ()).throw(KeyboardInterrupt()))
+
+    with pytest.raises(SystemExit) as stopped:
+        series.main()
+
+    assert stopped.value.code == 130

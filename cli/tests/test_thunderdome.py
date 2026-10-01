@@ -1,4 +1,5 @@
 import importlib.util
+import signal
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,14 @@ import chess
 
 pytest.importorskip("textual")
 
-from arcade_cli.arcade_app import ArcadeApp, BrailleBoard, decision_history, score_line
+from arcade_cli.arcade_app import (
+    ArcadeApp,
+    BrailleBoard,
+    decision_history,
+    load_dot_renderer,
+    original_board_frame,
+    score_line,
+)
 
 
 def test_score_line_prefers_current_series_summary(tmp_path):
@@ -46,12 +54,47 @@ async def test_braille_board_renders_multiple_rows():
         board.update_position(chess.Board(), "WHITE", "BLACK")
         lines = str(board.content).splitlines()
 
-        assert len(lines) == 29
-        assert all(len(line) >= 51 for line in lines[2:26])
+        assert len(lines) >= 20
+        assert all(f"{rank} " in str(board.content) for rank in range(1, 9))
         assert not any(symbol in str(board.content) for symbol in "♟♞♝♜♛♚")
-        assert any("⣿" in line or "⣶" in line for line in lines)
+        assert any("⠀" <= char <= "⣿" and char != "⠀" for line in lines for char in line)
         assert any("WHITE" in line for line in lines)
         assert any("BLACK" in line for line in lines)
+
+
+def test_original_board_uses_canonical_engine_renderer():
+    renderer = load_dot_renderer()
+    board = chess.Board()
+
+    frame = original_board_frame(
+        renderer, board, [], "WHITE", "BLACK", cols=80, rows=40, now=123.0
+    )
+    ansi = renderer.render(
+        board,
+        terminal_size=(80, 40),
+        now=123.0,
+        output=False,
+        names_override=("WHITE", "BLACK"),
+    )
+
+    assert frame.plain == renderer.strip_terminal_controls(ansi).plain
+
+
+@pytest.mark.asyncio
+async def test_new_move_starts_canonical_fly_animation():
+    app = ArcadeApp(Path(__file__).resolve().parents[2] / "games/chess/match-009", 20, 1, True)
+    app.start_runner = lambda: None
+    async with app.run_test(size=(120, 42)) as pilot:
+        await pilot.pause()
+        widget = app.query_one("#board", BrailleBoard)
+        before = chess.Board()
+        after = chess.Board()
+        after.push_san("e4")
+        widget.update_position(before, "WHITE", "BLACK", [])
+        widget.update_position(after, "WHITE", "BLACK", ["e4"])
+
+        assert widget.fly_animation is not None
+        assert widget.fly_animation[1].uci() == "e2e4"
 
 
 @pytest.mark.asyncio
@@ -82,7 +125,7 @@ async def test_textual_app_renders_single_pane_state():
         app.refresh_state()
 
         assert "GPT-OSS-120B" in str(app.query_one("#match").content)
-        assert "⣿" in str(app.query_one("#board").content)
+        assert any(char >= "⠀" and char <= "⣿" for char in str(app.query_one("#board").content))
         assert "DECISIONS" in str(app.query_one("#decision").content)
 
 
@@ -98,3 +141,77 @@ async def test_decision_history_is_scrollable_and_navigable():
         assert app.query_one("#decisions").can_focus
         assert callable(app.action_decision_down)
         assert callable(app.action_decision_up)
+
+
+def test_runner_command_forwards_match_config(tmp_path, monkeypatch):
+    config = tmp_path / "match.toml"
+    config.write_text("version = 1\n")
+    captured = {}
+
+    class Process:
+        pid = 123
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return Process()
+
+    monkeypatch.setattr("arcade_cli.arcade_app.subprocess.Popen", fake_popen)
+    app = ArcadeApp(tmp_path / "live", 3, 1, False, config=config)
+    app.start_runner()
+
+    assert captured["command"][-2:] == ["--config", str(config.resolve())]
+    assert captured["kwargs"]["start_new_session"] is True
+
+
+def test_runner_auto_resumes_interrupted_live_game(tmp_path, monkeypatch):
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "moves.txt").write_text("e4 e5\n")
+    (live / "names.txt").write_text("ONE TWO\n")
+    captured = {}
+
+    class Process:
+        pid = 123
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        return Process()
+
+    monkeypatch.setattr("arcade_cli.arcade_app.subprocess.Popen", fake_popen)
+    app = ArcadeApp(live, 3, 1, False)
+    app.start_runner()
+
+    assert "--resume-live" in captured["command"]
+
+
+def test_stop_runner_interrupts_process_group_and_reaps(monkeypatch, tmp_path):
+    events = []
+
+    class Process:
+        pid = 321
+        def poll(self): return None
+        def wait(self, timeout=None): events.append(("wait", timeout)); return 130
+
+    monkeypatch.setattr("arcade_cli.arcade_app.os.killpg", lambda pid, sig: events.append((pid, sig)))
+    app = ArcadeApp(tmp_path / "live", 1, 1, False)
+    app.process = Process()
+
+    app.stop_runner()
+
+    assert events[0] == (321, signal.SIGINT)
+    assert events[1][0] == "wait"
+
+
+@pytest.mark.asyncio
+async def test_view_only_archive_reports_complete(tmp_path):
+    (tmp_path / "names.txt").write_text("WHITE BLACK\n")
+    (tmp_path / "moves.txt").write_text("f3 e5 g4 Qh4#\n")
+    (tmp_path / "result.txt").write_text("checkmate\n")
+    app = ArcadeApp(tmp_path, 1, 1, False, run_matches=False)
+
+    async with app.run_test(size=(120, 42)) as pilot:
+        await pilot.pause()
+        app.refresh_state()
+
+        assert "status: complete" in str(app.query_one("#match").content)

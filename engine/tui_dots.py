@@ -475,18 +475,33 @@ def build(sans):
         b.push_san(s)
     return b
 
-def render(board, fly=None, status_extra=''):
+def strip_terminal_controls(ansi):
+    """Convert a renderer frame to Rich text without cursor/erase controls."""
+    from rich.text import Text
+    cleaned = re.sub(r'\x1b\[(?:H|\?25l|[0-9;]*[JK])', '', ansi)
+    return Text.from_ansi(cleaned)
+
+
+def render(board, fly=None, status_extra='', *, terminal_size=None, now=None,
+           output=True, names_override=None, interactive=None):
     global _btn_bounds
-    t = time.monotonic()
-    refresh_names()
-    cols, rows = shutil.get_terminal_size((46, 28))
+    t = time.monotonic() if now is None else now
+    if names_override is None:
+        refresh_names()
+        display_names = names
+    else:
+        display_names = {'w': names_override[0], 'b': names_override[1]}
+    cols, rows = terminal_size or shutil.get_terminal_size((46, 28))
     if cols < 29 or rows < 19:
         _btn_bounds = None    # pane too small to draw it -- stale bounds must not fire
-        sys.stdout.write('\x1b[H' + bg(PANEL) + fg(TEXT) + ' dot board needs 29x19 '
-                         + '\x1b[K' + R + '\x1b[J')
-        sys.stdout.flush()
-        return
-    if fit_geometry(cols, rows):
+        frame = ('\x1b[H' + bg(PANEL) + fg(TEXT) + ' dot board needs 29x19 '
+                 + '\x1b[K' + R + '\x1b[J')
+        if output:
+            sys.stdout.write(frame)
+            sys.stdout.flush()
+        return frame
+    geometry_changed = fit_geometry(cols, rows)
+    if geometry_changed and output:
         sys.stdout.write('\x1b[2J')     # geometry changed: repaint from clean
     boardw = BW + 5
     LP = ' ' * max(0, (cols - boardw) // 2)
@@ -611,9 +626,9 @@ def render(board, fly=None, status_extra=''):
     bl = board.turn == chess.BLACK and not over
     if show_head:
         out.append(line('  ' + fg(W_GLYPH if wl else blend(W_GLYPH, PANEL, 0.6))
-                        + ('▸ ' if wl else '  ') + f'\x1b[1m{names["w"]}\x1b[22m' + R + bg(PANEL)
+                        + ('▸ ' if wl else '  ') + f'\x1b[1m{display_names["w"]}\x1b[22m' + R + bg(PANEL)
                         + fg(TDIM) + '  ' + fg(B_GLYPH if bl else blend(B_GLYPH, PANEL, 0.6))
-                        + ('▸ ' if bl else '  ') + f'\x1b[1m{names["b"]}\x1b[22m'))
+                        + ('▸ ' if bl else '  ') + f'\x1b[1m{display_names["b"]}\x1b[22m'))
     if show_spark:
         hist = material_history(move_list)
         d = hist[-1] if hist else 0
@@ -642,12 +657,12 @@ def render(board, fly=None, status_extra=''):
         out.append(line('   ' + fg(TDIM) + '  '.join(pairs[-3:])[:boardw - 4]))
     if over:
         res = board.result()
-        win = names['w'] if res == '1-0' else names['b'] if res == '0-1' else 'NOBODY'
+        win = display_names['w'] if res == '1-0' else display_names['b'] if res == '0-1' else 'NOBODY'
         c = W_GLYPH if res == '1-0' else B_GLYPH if res == '0-1' else SLATE
         status_colored = f'\x1b[1m{fg(c)}{res}  {win} WINS{R}{bg(PANEL)}'
         status_plain_len = len(f'{res}  {win} WINS')
     else:
-        side = names['w'] if board.turn else names['b']
+        side = display_names['w'] if board.turn else display_names['b']
         chk_plain = '  CHECK' if board.is_check() else ''
         chk = f'  {fg(CHECKC)}CHECK' if board.is_check() else ''
         ex, ex_plain = status_extra, status_extra
@@ -656,7 +671,9 @@ def render(board, fly=None, status_extra=''):
             ex = '  ' + fg(blend(PANEL, SLATE, 0.4 + 0.5 * idle)) + 'dissolving…'
         status_colored = f'{fg(TEXT)}{side} to move{chk}{fg(TDIM)}{ex}'
         status_plain_len = len(f'{side} to move{chk_plain}{ex_plain}')
-    if INPUT_ENABLED:
+    if interactive is None:
+        interactive = INPUT_ENABLED
+    if interactive:
         # Anchored right after the status text, not the board edge -- its
         # column shifts with the status text's own length, which is why we
         # track plain (escape-free) length alongside the coloured string.
@@ -672,8 +689,11 @@ def render(board, fly=None, status_extra=''):
         ban = read_cached(BANNER)
         out.append(line(f'   {fg(FOOT)}{ban[:boardw - 4]}' if ban else ''))
     out.append(bg(PANEL) + '\x1b[J' + R)
-    sys.stdout.write(''.join(out))
-    sys.stdout.flush()
+    frame = ''.join(out)
+    if output:
+        sys.stdout.write(frame)
+        sys.stdout.flush()
+    return frame
 
 def draw_piece(g, pc, x0, y0, idle, t, checked=False, topple=False):
     """Both sides are SOLID dot sprites — the same braille figures, filled right
