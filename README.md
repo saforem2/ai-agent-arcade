@@ -33,13 +33,22 @@ The current ALCF routes are:
 ## The arena
 
 <p align="center">
-  <img src="docs/assets/alcf-chess-board.png" alt="Final dot-matrix chessboard showing GPT-OSS-120B defeating INKLING-BF16" width="620">
+  <img src="docs/assets/thunderdome-textual.png" alt="Single-pane Thunderdome Textual app showing the board, match state, latest rationale, and series log" width="900">
 </p>
 
 The board is a terminal-native braille field. Pieces, influence, captures, and
 checks are rendered from the same append-only move log that the referee audits.
 The Textual app puts the board beside compact match, rationale, and event
 panels. The same files can still be displayed in a custom Herdr wall.
+
+<details>
+<summary>Final board from the first archived ALCF match</summary>
+
+<p align="center">
+  <img src="docs/assets/alcf-chess-board.png" alt="Final dot-matrix chessboard showing GPT-OSS-120B defeating INKLING-BF16" width="620">
+</p>
+
+</details>
 
 ## ALCF authentication
 
