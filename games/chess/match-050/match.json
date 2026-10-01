@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 50,
+  "started": "2026-10-01T00:30:14",
+  "seats": {
+    "white": {
+      "agent": "gpt-oss-120b",
+      "name": "GPT-OSS-120B"
+    },
+    "black": {
+      "agent": "inkling-bf16",
+      "name": "INKLING-BF16"
+    }
+  },
+  "host": {
+    "agent": "series-host",
+    "name": "HOST"
+  },
+  "live_dir": "/Users/sam/.hermes/cache/scratch/arcade-smoke",
+  "status": "complete",
+  "result": "GPT-OSS-120B 1-0 INKLING-BF16",
+  "ended": "2026-10-01T00:30:59"
+}

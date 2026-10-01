@@ -310,3 +310,29 @@ def test_ask_reports_the_last_raw_response_when_every_attempt_fails(tmp_path, mo
         series.ask(series.PLAYERS["gpt-oss"], board, [], log, tmp_path / "decisions.jsonl")
 
     assert "no json here" in str(failure.value)
+
+
+def test_reset_live_archives_an_interrupted_game_then_clears_it(tmp_path):
+    """Resetting must preserve the partial transcript, never silently delete it."""
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "names.txt").write_text("GPT-OSS-120B INKLING-BF16\n")
+    (live / "moves.txt").write_text("e4 e5\n")
+    (live / "decision_log.jsonl").write_text('{"ply": 1}\n')
+    (live / "series-runner.log").write_text("GAME 1/1\n")
+
+    saved = series.reset_live(live)
+
+    assert saved is not None and saved.exists()
+    assert (saved / "moves.txt").read_text().split() == ["e4", "e5"]
+    assert (live / "moves.txt").read_text().strip() == ""
+    assert not (live / "decision_log.jsonl").read_text().strip()
+    assert not (live / "pending.txt").exists()
+
+
+def test_reset_live_on_an_empty_directory_archives_nothing(tmp_path):
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "moves.txt").write_text("")
+
+    assert series.reset_live(live) is None

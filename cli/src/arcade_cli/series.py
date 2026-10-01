@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -512,6 +513,45 @@ def existing_series_rows(before_match):
     return rows
 
 
+RESET_TRUNCATE = (
+    "moves.txt", "fen.txt", "decision_log.jsonl", "banner.txt", "result.txt",
+    "white-model.log", "black-model.log", "series-runner.log", "stage_log.txt",
+)
+RESET_UNLINK = ("pending.txt", "series-summary.json")
+RESET_PRESERVE = ("moves.txt", "decision_log.jsonl", "names.txt", "series-runner.log", "fen.txt")
+
+
+def reset_live(live):
+    """Abandon whatever is in ``live`` and return to a clean pre-game state.
+
+    An interrupted game is evidence, so the partial transcript is copied to
+    ``abandoned/<timestamp>/`` before anything is cleared. Returns that path,
+    or ``None`` when there was no game in progress to preserve.
+
+    Archived matches under ``games/`` are never touched.
+    """
+    live = Path(live)
+    moves = (live / "moves.txt").read_text().split() if (live / "moves.txt").exists() else []
+    saved = None
+    if moves:
+        saved = live / "abandoned" / time.strftime("%Y%m%dT%H%M%S")
+        saved.mkdir(parents=True, exist_ok=True)
+        for name in RESET_PRESERVE:
+            source = live / name
+            if source.exists():
+                shutil.copy2(source, saved / name)
+        (saved / "reason.txt").write_text(f"abandoned at ply {len(moves)} by --reset\n")
+    for name in RESET_TRUNCATE:
+        path = live / name
+        if path.exists():
+            path.write_text("")
+    for name in RESET_UNLINK:
+        (live / name).unlink(missing_ok=True)
+    for stale in live.glob("pending.stale.*.txt"):
+        stale.unlink(missing_ok=True)
+    return saved
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=20)
@@ -519,6 +559,11 @@ def parse_args():
     parser.add_argument("--start-index", type=int, default=1)
     parser.add_argument("--resume-live", action="store_true")
     parser.add_argument("--config", type=Path)
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="abandon an interrupted live game (kept under abandoned/) and start clean",
+    )
     return parser.parse_args()
 
 
@@ -531,6 +576,11 @@ def run_series():
     live_dir.mkdir(parents=True, exist_ok=True)
     series_log = live_dir / "series-runner.log"
     summary = live_dir / "series-summary.json"
+    if args.reset:
+        if args.resume_live:
+            raise ValueError("--reset and --resume-live are mutually exclusive")
+        saved = reset_live(live_dir)
+        print(f"reset: abandoned transcript kept at {saved}" if saved else "reset: live directory was already clean")
     if args.start_index < 1 or args.start_index > args.games:
         raise SystemExit("--start-index must be between 1 and --games")
     if args.start_index == 1 and not args.resume_live:

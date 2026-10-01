@@ -42,6 +42,25 @@ detects and resumes an interrupted live game, including a valid staged move.
 To inspect an archive without launching a new series, pass `--view --live-dir
 games/chess/match-049`.
 
+### Reset a game
+
+To throw away an interrupted game and start from the opening position:
+
+```bash
+uv run ai-agent-arcade --reset --games 20
+```
+
+Press `R` in the running app to do the same thing without restarting it.
+
+Reset never deletes evidence. The partial transcript (moves, decisions, names,
+FEN, runner log) is copied to `<live-dir>/abandoned/<timestamp>/` with a
+`reason.txt` first, and archived matches under `games/` are untouched. The
+headless runner takes the same flag:
+
+```bash
+uv run python -m arcade_cli.series --reset --games 20 --live-dir "$ARCADE_LIVE"
+```
+
 ### Configure another matchup
 
 Pass a versioned TOML file to use any two OpenAI-compatible endpoints:
@@ -113,6 +132,7 @@ the scrollable decision history, and the series log.
 |---|---|
 | `b` | Switch board style |
 | `r` | Replay the current game with move animations |
+| `R` | Reset: abandon the live game and start a new one |
 | `j` / `k` | Scroll decisions down / up |
 | `g` / `G` | Jump to the newest / oldest decision |
 | `p` / `c` | Pause / continue the runner |

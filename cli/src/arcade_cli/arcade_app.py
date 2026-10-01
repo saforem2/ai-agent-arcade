@@ -360,6 +360,7 @@ class ArcadeApp(App):
         ("c", "continue_run", "Continue"),
         ("b", "toggle_board", "Board style"),
         ("r", "replay", "Replay"),
+        ("R", "reset", "Reset game"),
         ("j", "decision_down", "Decision down"),
         ("k", "decision_up", "Decision up"),
         ("g", "decision_newest", "Latest decision"),
@@ -471,6 +472,31 @@ class ArcadeApp(App):
     def action_replay(self) -> None:
         self.start_replay()
 
+    def action_reset(self) -> None:
+        """Abandon the live game and start a fresh one from the opening position.
+
+        The partial transcript is preserved under ``abandoned/`` first; archived
+        matches are untouched.
+        """
+        self.stop_runner()
+        saved = series.reset_live(self.live)
+        self.replaying = False
+        self.last_decision_count = -1
+        self.last_event_size = 0
+        self.runner_error = ""
+        self.runner_error_rendered = False
+        board = self.query_one("#board", BrailleBoard)
+        board.replay_moves = []
+        board.replay_index = 0
+        board.fly_animation = None
+        board.update_position(chess.Board(), board.white, board.black, [])
+        if self.run_matches:
+            self.resume_live = False
+            self.start_runner()
+        self.notify(
+            f"Reset — abandoned game saved to {saved.name}" if saved else "Reset — no game in progress"
+        )
+
     def start_replay(self) -> None:
         """Rewind the whole view -- board, match panel and decisions -- to ply 0.
 
@@ -569,12 +595,22 @@ def main() -> None:
     parser.add_argument("--config", type=Path, help="TOML matchup configuration")
     parser.add_argument("--view", action="store_true", help="view an existing live directory without starting models")
     parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="abandon an interrupted live game (kept under abandoned/) and start clean",
+    )
+    parser.add_argument(
         "--board-style",
         choices=("original", "compact"),
         default="original",
         help="original = animated dot field (default); compact = dense glyph grid",
     )
     args = parser.parse_args()
+    if args.reset:
+        live = args.live_dir.resolve()
+        live.mkdir(parents=True, exist_ok=True)
+        saved = series.reset_live(live)
+        print(f"reset: abandoned transcript kept at {saved}" if saved else "reset: live directory was already clean")
     ArcadeApp(
         args.live_dir,
         args.games,

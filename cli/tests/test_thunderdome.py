@@ -220,6 +220,30 @@ async def test_replay_reveals_match_and_decisions_progressively():
 
 
 @pytest.mark.asyncio
+async def test_reset_key_clears_live_state_and_restarts_the_runner(tmp_path):
+    """`R` must abandon the interrupted game and relaunch without --resume-live."""
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "names.txt").write_text("GPT-OSS-120B INKLING-BF16\n")
+    (live / "moves.txt").write_text("e4 e5\n")
+
+    commands = []
+    app = ArcadeApp(live, 1, 1, False)
+    app.start_runner = lambda: commands.append("start")
+    app.stop_runner = lambda: commands.append("stop")
+
+    async with app.run_test(size=(120, 42)) as pilot:
+        await pilot.pause()
+        commands.clear()
+        app.action_reset()
+        await pilot.pause()
+
+        assert commands == ["stop", "start"]
+        assert (live / "moves.txt").read_text().strip() == ""
+        assert list((live / "abandoned").iterdir())
+
+
+@pytest.mark.asyncio
 async def test_board_style_can_toggle_between_original_and_compact():
     app = ArcadeApp(
         Path(__file__).resolve().parents[2] / "games/chess/match-009",
