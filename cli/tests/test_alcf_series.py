@@ -97,7 +97,7 @@ def test_decision_request_uses_low_reasoning_and_room_for_visible_json(monkeypat
     series.request_decision(series.PLAYERS["gpt-oss"], "choose", 180)
 
     assert captured["reasoning_effort"] == "low"
-    assert captured["max_tokens"] == 4096
+    assert captured["max_tokens"] == 8192
 
 
 def test_ask_retries_timeout_and_records_reasoning_usage(tmp_path, monkeypatch):
