@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 32,
+  "started": "2026-09-30T19:53:03",
+  "seats": {
+    "white": {
+      "agent": "gpt-oss-120b",
+      "name": "GPT-OSS-120B"
+    },
+    "black": {
+      "agent": "inkling-bf16",
+      "name": "INKLING-BF16"
+    }
+  },
+  "host": {
+    "agent": "series-host",
+    "name": "HOST"
+  },
+  "live_dir": "/Users/sam/.hermes/cache/scratch/alcf-chess-20-live",
+  "status": "complete",
+  "result": "GPT-OSS-120B 1/2-1/2 INKLING-BF16",
+  "ended": "2026-09-30T19:57:07"
+}
