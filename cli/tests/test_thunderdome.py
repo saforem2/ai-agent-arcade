@@ -361,3 +361,208 @@ async def test_view_only_archive_reports_complete(tmp_path):
         app.refresh_state()
 
         assert "status: complete" in str(app.query_one("#match").content)
+
+
+def test_match_markup_shows_standings_block_when_complete():
+    board = chess.Board()
+
+    text = Text.from_markup(match_markup(
+        board, [], "WHITE", "BLACK", 10, 10,
+        "6–3 · 1 draws · 10 complete", "complete",
+        standings="WHITE won 6/10 games!!! (1 draw)",
+    )).plain
+
+    assert "STANDINGS" in text
+    assert "WHITE won 6/10 games!!!" in text
+
+
+def test_match_markup_omits_standings_block_mid_series():
+    board = chess.Board()
+
+    text = Text.from_markup(match_markup(
+        board, [], "WHITE", "BLACK", 4, 10,
+        "2–1 · 0 draws · 3 complete", "running",
+    )).plain
+
+    assert "STANDINGS" not in text
+
+
+def test_match_markup_light_accents_stay_off_pale_cyan():
+    board = chess.Board()
+
+    text = match_markup(
+        board, [], "WHITE", "BLACK", 1, 1,
+        "0–0 · 0 draws", "running", dark=False,
+    )
+
+    assert "#78d2eb" not in text
+    assert "#1F5BA5" in text
+
+
+def test_detect_ansi_theme_reads_terminal_background(monkeypatch):
+    from arcade_cli.themes import detect_ansi_theme, resolve_theme
+
+    monkeypatch.setenv("COLORFGBG", "0;15")
+    assert detect_ansi_theme() == "ansi-light"
+    monkeypatch.setenv("COLORFGBG", "15;0")
+    assert detect_ansi_theme() == "ansi-dark"
+    monkeypatch.delenv("COLORFGBG", raising=False)
+    assert detect_ansi_theme() == "ansi-dark"
+
+
+def test_resolve_theme_prefers_flag_then_env(monkeypatch):
+    from arcade_cli.themes import resolve_theme
+
+    monkeypatch.setenv("COLORFGBG", "0;15")
+    monkeypatch.setenv("ARCADE_THEME", "pbs-dark")
+    assert resolve_theme("ansi-dark") == "ansi-dark"
+    assert resolve_theme(None) == "pbs-dark"
+    monkeypatch.delenv("ARCADE_THEME", raising=False)
+    assert resolve_theme(None) == "ansi-light"
+
+
+def test_arcade_app_registers_bundled_themes_and_defaults_to_ansi(tmp_path, monkeypatch):
+    from arcade_cli.themes import THEME_NAMES
+
+    monkeypatch.delenv("ARCADE_THEME", raising=False)
+    monkeypatch.setenv("COLORFGBG", "15;0")
+    app = ArcadeApp(tmp_path / "live", 10, 1, False)
+
+    assert app.theme in THEME_NAMES
+    assert app.theme == "ansi-dark"
+    assert app.is_light is False
+
+
+@pytest.mark.asyncio
+async def test_board_follows_runtime_theme_switch(tmp_path):
+    """Switching theme via the palette must repaint the dot field, not just
+    the CSS chrome — refresh_state re-derives the background every tick."""
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / "names.txt").write_text("WHITE BLACK\n")
+    (live / "moves.txt").write_text("e4 e5\n")
+    app = ArcadeApp(live, 1, 1, False, run_matches=False, theme="ansi-dark")
+    app.start_runner = lambda: None
+
+    async with app.run_test(size=(120, 42)) as pilot:
+        await pilot.pause()
+        app.refresh_state()
+        widget = app.query_one("#board", BrailleBoard)
+        assert widget.dark is True
+        assert widget.renderer._palette == "dark"
+
+        app.theme = "ansi-light"
+        app.refresh_state()
+        await pilot.pause()
+
+        assert app.is_light is True
+        assert widget.dark is False
+        assert widget.renderer._palette == "light"
+
+        widget.set_style("compact")
+        await pilot.pause()
+
+        styles = {span.style for span in widget.content.spans}
+        assert any("#0b3d66" in style for style in styles)
+        assert not any("#d9f4ff" in style for style in styles)
+
+
+def test_parse_osc11_background_scales_hex_channels():
+    from arcade_cli.themes import parse_osc11_background
+
+    assert parse_osc11_background(b"\x1b]11;rgb:eeee/eeee/eeee\x1b\\") == (238, 238, 238)
+    assert parse_osc11_background(b"\x1b]11;rgb:1c/1c/1c\x07") == (28, 28, 28)
+    assert parse_osc11_background(b"\x1b]11;rgb:ffff/ffff/ffff\x1b\\") == (255, 255, 255)
+    assert parse_osc11_background(b"nothing here") is None
+
+
+def test_detect_prefers_colorfgbg_over_osc11_probe(monkeypatch):
+    import arcade_cli.themes as themes
+
+    monkeypatch.setenv("COLORFGBG", "15;0")
+    monkeypatch.setattr(themes, "query_terminal_background", lambda: (238, 238, 238))
+
+    assert themes.detect_ansi_theme() == "ansi-dark"
+
+
+def test_detect_uses_osc11_luminance_when_colorfgbg_absent(monkeypatch):
+    import arcade_cli.themes as themes
+
+    monkeypatch.delenv("COLORFGBG", raising=False)
+    monkeypatch.setattr(themes, "query_terminal_background", lambda: (238, 238, 238))
+    assert themes.detect_ansi_theme() == "ansi-light"
+    monkeypatch.setattr(themes, "query_terminal_background", lambda: (28, 28, 28))
+    assert themes.detect_ansi_theme() == "ansi-dark"
+    monkeypatch.setattr(themes, "query_terminal_background", lambda: None)
+    assert themes.detect_ansi_theme() == "ansi-dark"
+
+
+def test_read_thinking_reports_elapsed_seconds(tmp_path):
+    import time
+
+    from arcade_cli.arcade_app import read_thinking
+
+    assert read_thinking(tmp_path) is None
+    (tmp_path / "thinking.txt").write_text(f"MUSE-SPARK-BF16 {time.time() - 42}\n")
+
+    assert read_thinking(tmp_path) == ("MUSE-SPARK-BF16", 42)
+    (tmp_path / "thinking.txt").write_text("garbage\n")
+
+    assert read_thinking(tmp_path) is None
+
+
+def test_match_markup_shows_live_thinking_clock():
+    board = chess.Board()
+
+    text = Text.from_markup(match_markup(
+        board, [], "WHITE", "BLACK", 1, 20,
+        "0–0 · 0 draws", "running",
+        thinking=("MUSE-SPARK-BF16", 42),
+    )).plain
+
+    assert "thinking: MUSE-SPARK-BF16 42s" in text
+
+
+def test_match_markup_omits_thinking_clock_when_idle():
+    board = chess.Board()
+
+    text = Text.from_markup(match_markup(
+        board, [], "WHITE", "BLACK", 1, 20, "0–0 · 0 draws", "running",
+    )).plain
+
+    assert "thinking:" not in text
+
+
+def test_runner_command_forwards_effort_override(tmp_path, monkeypatch):
+    captured = {}
+
+    class Process:
+        pid = 123
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        return Process()
+
+    monkeypatch.setattr("arcade_cli.arcade_app.subprocess.Popen", fake_popen)
+    app = ArcadeApp(tmp_path / "live", 3, 1, False, effort="medium")
+    app.start_runner()
+
+    assert "--effort" in captured["command"]
+    assert captured["command"][captured["command"].index("--effort") + 1] == "medium"
+
+
+def test_runner_command_omits_effort_by_default(tmp_path, monkeypatch):
+    captured = {}
+
+    class Process:
+        pid = 123
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        return Process()
+
+    monkeypatch.setattr("arcade_cli.arcade_app.subprocess.Popen", fake_popen)
+    app = ArcadeApp(tmp_path / "live", 3, 1, False)
+    app.start_runner()
+
+    assert "--effort" not in captured["command"]

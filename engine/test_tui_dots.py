@@ -285,3 +285,38 @@ def test_do_replay_propagates_quit(tmp_path):
     r = run_probe(tmp_path, script)
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "quit"
+
+
+def test_set_palette_light_repaints_frame_and_restores_dark(tmp_path):
+    """The board paints its own RGB background, so a light terminal theme
+    needs a light renderer palette — the frame must stop emitting the dark
+    PANEL (18,21,28) ground and go back to it on restore."""
+    (tmp_path / "names.txt").write_text("WHITE BLACK\n")
+    (tmp_path / "moves.txt").write_text("")
+    script = (
+        "print('default', td._palette, td.PANEL)\n"
+        "dark_frame = td.render(td.build([]), output=False, terminal_size=(80, 40))\n"
+        "print('dark_frame', '48;2;18;21;28' in dark_frame)\n"
+        "td.set_palette('light')\n"
+        "print('light', td._palette, td.PANEL)\n"
+        "light_frame = td.render(td.build([]), output=False, terminal_size=(80, 40))\n"
+        "print('light_frame', '48;2;238;238;238' in light_frame)\n"
+        "print('no_dark_ground', '48;2;18;21;28' not in light_frame)\n"
+        "td.set_palette('dark')\n"
+        "print('restored', td._palette, td.PANEL)\n"
+        "try:\n"
+        "    td.set_palette('nope')\n"
+        "except ValueError:\n"
+        "    print('rejects_unknown')\n"
+    )
+    result = run_probe(tmp_path, script)
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0] == "default dark (18, 21, 28)"
+    assert lines[1] == "dark_frame True"
+    assert lines[2] == "light light (238, 238, 238)"
+    assert lines[3] == "light_frame True"
+    assert lines[4] == "no_dark_ground True"
+    assert lines[5] == "restored dark (18, 21, 28)"
+    assert lines[6] == "rejects_unknown"

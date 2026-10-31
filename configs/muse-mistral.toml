@@ -1,0 +1,15 @@
+version = 1
+
+[players.one]
+name = "MISTRAL-LARGE-4-NVFP4"
+harness = "alcf"
+base_url = "https://inference-api.alcf.anl.gov/resource_server/minerva/api/v1"
+model = "mistral-large-4-nvfp4"
+effort = "medium"
+
+[players.two]
+name = "MUSE-SPARK-BF16"
+harness = "alcf"
+base_url = "https://inference-api.alcf.anl.gov/resource_server/minerva/api/v1"
+model = "muse-spark-bf16"
+effort = "medium"

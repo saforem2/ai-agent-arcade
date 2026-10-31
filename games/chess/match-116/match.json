@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 116,
+  "started": "2026-10-21T18:23:54",
+  "seats": {
+    "white": {
+      "agent": "muse-spark-bf16",
+      "name": "MUSE-SPARK-BF16"
+    },
+    "black": {
+      "agent": "inkling-bf16",
+      "name": "INKLING-BF16"
+    }
+  },
+  "host": {
+    "agent": "series-host",
+    "name": "HOST"
+  },
+  "live_dir": "/Users/sam/projects/saforem2/arcade/.ai-agent-arcade/live",
+  "status": "complete",
+  "result": "MUSE-SPARK-BF16 1-0 INKLING-BF16",
+  "ended": "2026-10-21T18:29:34"
+}

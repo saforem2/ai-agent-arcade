@@ -374,3 +374,103 @@ def test_reset_live_leaves_completed_matches_untouched(tmp_path, monkeypatch):
     series.reset_live(live)
 
     assert json.loads((match_dir / "match.json").read_text()) == record
+
+
+def _summary(wins, draws, complete, requested=None):
+    return {
+        "games_requested": requested if requested is not None else complete,
+        "games_complete": complete,
+        "wins": wins,
+        "draws": draws,
+    }
+
+
+def test_standings_line_calls_out_a_decisive_winner():
+    line = series.standings_line(
+        _summary({"INKLING-BF16": 6, "GPT-OSS-120B": 3}, 1, 10)
+    )
+
+    assert line == "INKLING-BF16 won 6/10 games!!! (1 draw)"
+
+
+def test_standings_line_omits_the_draw_suffix_when_there_are_none():
+    line = series.standings_line(
+        _summary({"INKLING-BF16": 6, "GPT-OSS-120B": 4}, 0, 10)
+    )
+
+    assert line == "INKLING-BF16 won 6/10 games!!!"
+
+
+def test_standings_line_reports_ties_and_all_draw_series():
+    tied = series.standings_line(
+        _summary({"INKLING-BF16": 3, "GPT-OSS-120B": 3}, 2, 8)
+    )
+    drawn = series.standings_line(
+        _summary({"INKLING-BF16": 0, "GPT-OSS-120B": 0}, 10, 10)
+    )
+
+    assert tied == "Dead even: GPT-OSS-120B 3 — 3 INKLING-BF16 across 8 games (+2 draws)"
+    assert drawn == "All 10 games drawn — dead even"
+    assert series.standings_line(_summary({}, 0, 0)) == "No games complete yet."
+
+
+def test_write_summary_stores_the_standings_line(tmp_path):
+    path = tmp_path / "series-summary.json"
+    rows = [(1, "INKLING-BF16 1-0 GPT-OSS-120B"), (2, "GPT-OSS-120B 1/2-1/2 INKLING-BF16")]
+
+    series.write_summary(path, rows, 2)
+
+    payload = json.loads(path.read_text())
+    assert payload["standings"] == "INKLING-BF16 won 1/2 games!!! (1 draw)"
+
+
+def test_ask_records_thinking_seconds_and_cleans_up_thinking_file(tmp_path, monkeypatch):
+    """The live turn clock: thinking.txt exists while the model thinks (so
+    the TUI can show elapsed), lands in the decision row, then is removed."""
+    import time as time_module
+
+    def fake_request(player, prompt, timeout):
+        assert (tmp_path / "thinking.txt").read_text().split()[0] == "GPT-OSS-120B"
+        return (
+            json.dumps({
+                "move": "Nf3",
+                "candidate_moves": ["Nf3"],
+                "rationale": "Develops.",
+                "expected_reply": "Nf6",
+            }),
+            {},
+        )
+
+    monkeypatch.setattr(series, "request_decision", fake_request)
+    decision_log = tmp_path / "decision_log.jsonl"
+
+    series.ask(series.PLAYERS["gpt-oss"], chess.Board(), [], tmp_path / "model.log", decision_log)
+
+    row = json.loads(decision_log.read_text())
+    assert row["thinking_seconds"] >= 0
+    assert not (tmp_path / "thinking.txt").exists()
+
+
+def test_ask_removes_thinking_file_when_every_attempt_fails(tmp_path, monkeypatch):
+    """Otherwise a dead runner leaves the TUI clock climbing forever."""
+    monkeypatch.setattr(series, "request_decision", lambda *a, **k: ("no json", {}))
+
+    with __import__("pytest").raises(RuntimeError):
+        series.ask(
+            series.PLAYERS["gpt-oss"], chess.Board(), [],
+            tmp_path / "log.txt", tmp_path / "decisions.jsonl",
+        )
+
+    assert not (tmp_path / "thinking.txt").exists()
+
+
+def test_apply_effort_override_replaces_every_player():
+    players = [
+        {"name": "A", "effort": "low"},
+        {"name": "B", "effort": "high"},
+    ]
+
+    overridden = series.apply_effort_override(players, "medium")
+
+    assert [player["effort"] for player in overridden] == ["medium", "medium"]
+    assert [player["effort"] for player in players] == ["low", "high"]

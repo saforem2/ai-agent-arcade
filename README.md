@@ -90,10 +90,38 @@ model = "model-b"
 uv run ai-agent-arcade --config matchup.toml --games 10
 ```
 
+Override every player's reasoning effort for one run without editing the
+file (passed through as `reasoning_effort`):
+
+```bash
+uv run ai-agent-arcade --config matchup.toml --games 10 --effort medium
+```
+
 `base_url` may be an API root ending in `/v1` or the complete
 `/chat/completions` URL. Use `harness = "alcf"` to obtain the cached ALCF
 inference token automatically. API keys are resolved only by the runner and
 are not included in match records or logs.
+
+Two ALCF models on the same cluster (e.g. Minerva's `inkling-bf16` vs
+`muse-spark-bf16`) is the same shape with `harness = "alcf"` on both seats:
+
+```toml
+version = 1
+
+[players.one]
+name = "INKLING-BF16"
+harness = "alcf"
+base_url = "https://inference-api.alcf.anl.gov/resource_server/minerva/api/v1"
+model = "inkling-bf16"
+effort = "low"
+
+[players.two]
+name = "MUSE-SPARK-BF16"
+harness = "alcf"
+base_url = "https://inference-api.alcf.anl.gov/resource_server/minerva/api/v1"
+model = "muse-spark-bf16"
+effort = "low"
+```
 
 The `original` board is rendered by the same dot-field engine used by the
 standalone terminal viewer: identical geometry, influence field, sprites,
@@ -163,6 +191,54 @@ the whole game and scrolls with `j`, `k`, `g`, and `G`.
 
 This is the model's own summary. It is not a provider's hidden
 chain-of-thought and does not claim to reproduce one.
+
+### Themes
+
+The app ships the four Textual themes from
+[`pbs-tui`](https://github.com/saforem2/pbs-tui): `pbs-dark`, `pbs-light`,
+`ansi-dark`, and `ansi-light`. The `ansi-*` pair uses muted terminal-blending
+tones, including a light dot-field board palette — the board paints its own
+background, so it follows the theme instead of staying black.
+
+Startup defaults to the `ansi-*` pair and detects the terminal background
+automatically: `COLORFGBG` first, then a direct OSC 11 query to the terminal,
+then dark. Override once with `--theme` or persistently with `ARCADE_THEME`:
+
+```bash
+uv run ai-agent-arcade --games 20 --theme ansi-light
+ARCADE_THEME=pbs-dark uv run ai-agent-arcade --games 20
+```
+
+`Ctrl-P` still switches themes at runtime, and the board repaints with it.
+
+### Series standings
+
+When the series ends, the match panel grows a `STANDINGS` block:
+
+```text
+STANDINGS
+INKLING-BF16 won 6/10 games!!! (1 draw)
+```
+
+The same line is stored as `standings` in `series-summary.json`, appended as
+`STANDINGS: …` after `SERIES COMPLETE: …` in `series-runner.log`, and printed
+to stdout by the headless runner — so it shows in the TUI, the log tail, and
+the terminal alike. Ties and all-drawn series get their own phrasing
+(`Dead even: …`, `All 10 games drawn — dead even`).
+
+### Turn clock
+
+While a model is thinking, the match panel shows a live clock:
+
+```text
+status: running
+thinking: MUSE-SPARK-BF16 42s
+```
+
+Every finished turn is also timed in `series-runner.log`
+(`ply 68: MUSE-SPARK-BF16 Rd4+ (38s)`) and each `decision_log.jsonl` row
+carries `thinking_seconds`. Display only — no time limits, no forfeits;
+a slow model just reads as a big number instead of a frozen screen.
 
 ## Models
 

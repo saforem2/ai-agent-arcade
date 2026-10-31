@@ -22,3 +22,7 @@ frames/
 
 # OS
 .DS_Store
+
+# Live runtime (ephemeral — archived into games/ on completion)
+.ai-agent-arcade/
+tasks/

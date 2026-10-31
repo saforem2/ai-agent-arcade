@@ -56,7 +56,8 @@ PER_MATCH_TRUNCATE = ["chat.log", "banner.txt", "eval.log", "keeper.log", "ctl"]
 # next match's very first `status` could resolve a player's "last submission"
 # against a dead match's ply and misreport APPLIED/REJECTED.
 PER_MATCH_UNLINK = ["pending.txt", "result.txt", "draw_offer.txt", "TAMPER.txt", "roles.txt",
-                     "host.txt", "director.txt", "stage_log.txt", "menu.txt", "decision_log.jsonl"]
+                     "host.txt", "director.txt", "stage_log.txt", "menu.txt", "decision_log.jsonl",
+                     "thinking.txt"]
 PER_MATCH_GLOBS = [".stalls_*", ".last_*", ".prompt_out", ".ref_err", ".illegal"]
 # SERIES: cumulative across matches, never cleared. Names are in every line,
 # so it is pairing-agnostic storage read through a pairing filter (head_to_head).

@@ -258,6 +258,17 @@ def decision_response(body):
 
 
 def ask(player, board, moves, log, decision_log):
+    live = Path(decision_log).parent
+    thinking = live / "thinking.txt"
+    thinking.write_text(f"{player['name']} {time.time()}\n")
+    started = time.monotonic()
+    try:
+        return _ask(player, board, moves, log, decision_log, started)
+    finally:
+        thinking.unlink(missing_ok=True)
+
+
+def _ask(player, board, moves, log, decision_log, started):
     legal = [board.san(move) for move in board.legal_moves]
     base_prompt = f"""You are {player['name']} in a chess match against another language model.
 No chess engine, tools, code execution, web search, or outside assistance. Analyze the position yourself.
@@ -287,6 +298,7 @@ This is a concise self-reported rationale, not hidden chain-of-thought."""
                 "player": player["name"],
                 "model": player["model"],
                 "fen": board.fen(),
+                "thinking_seconds": round(time.monotonic() - started, 1),
                 **decision,
                 **usage,
             }
@@ -425,9 +437,11 @@ def play_one(live, game_index, games_requested, white, black, series_log, resume
         player = white if len(moves) % 2 == 0 else black
         if reconcile_pending(live, player, board, logs[player["name"]]):
             continue
+        turn_started = time.monotonic()
         decision = ask(player, board, moves, logs[player["name"]], decision_log)
         san = decision["move"]
-        append(series_log, f"  ply {len(moves) + 1}: {player['name']} {san}")
+        elapsed = time.monotonic() - turn_started
+        append(series_log, f"  ply {len(moves) + 1}: {player['name']} {san} ({elapsed:.0f}s)")
         output = apply_move(live, player, san, logs[player["name"]])
         if "GAMEOVER" in output:
             break
@@ -498,7 +512,44 @@ def write_summary(path, rows, games_requested, players=None):
         "draws": draws,
         "matches": [{"match": number, "result": result} for number, result in rows],
     }
+    payload["standings"] = standings_line(payload, players)
     path.write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def standings_line(summary, players=None):
+    """One-line celebration of a finished (or in-progress) series.
+
+    Decisive: ``INKLING-BF16 won 6/10 games!!! (1 draw)``.
+    Tied: ``Dead even: A 3 — 3 B across 6 games (+2 draws)``.
+    All draws: ``All 10 games drawn — dead even``.
+    """
+    wins = dict(summary.get("wins") or {})
+    draws = summary.get("draws", 0)
+    complete = summary.get("games_complete", 0)
+    if not complete:
+        return "No games complete yet."
+    game_word = "game" if complete == 1 else "games"
+    if players:
+        order = [player["name"] for player in players]
+    else:
+        order = sorted(wins, key=lambda name: (-wins.get(name, 0), name))
+    ranked = sorted(order, key=lambda name: (-wins.get(name, 0), name))
+    leader = ranked[0]
+    leader_wins = wins.get(leader, 0)
+    runner = ranked[1] if len(ranked) > 1 else None
+    runner_wins = wins.get(runner, 0) if runner else 0
+    draw_word = "draw" if draws == 1 else "draws"
+    if leader_wins == 0 and runner_wins == 0:
+        return f"All {complete} {game_word} drawn — dead even"
+    if runner is not None and leader_wins == runner_wins:
+        line = f"Dead even: {leader} {leader_wins} — {runner_wins} {runner} across {complete} {game_word}"
+        if draws:
+            line += f" (+{draws} {draw_word})"
+        return line
+    line = f"{leader} won {leader_wins}/{complete} {game_word}!!!"
+    if draws:
+        line += f" ({draws} {draw_word})"
+    return line
 
 
 def existing_series_rows(before_match):
@@ -517,7 +568,7 @@ RESET_TRUNCATE = (
     "moves.txt", "fen.txt", "decision_log.jsonl", "banner.txt", "result.txt",
     "white-model.log", "black-model.log", "series-runner.log", "stage_log.txt",
 )
-RESET_UNLINK = ("pending.txt", "series-summary.json")
+RESET_UNLINK = ("pending.txt", "series-summary.json", "thinking.txt")
 RESET_PRESERVE = ("moves.txt", "decision_log.jsonl", "names.txt", "series-runner.log", "fen.txt")
 
 
@@ -576,6 +627,16 @@ def reset_live(live):
     return saved
 
 
+def apply_effort_override(players, effort):
+    """Return players with every ``effort`` replaced by the CLI override.
+
+    Kept separate from ``run_series`` so the override is unit-testable
+    without launching a series. ``effort`` is passed through to the
+    provider as ``reasoning_effort``; validation lives provider-side.
+    """
+    return [{**player, "effort": effort} for player in players]
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=20)
@@ -583,6 +644,12 @@ def parse_args():
     parser.add_argument("--start-index", type=int, default=1)
     parser.add_argument("--resume-live", action="store_true")
     parser.add_argument("--config", type=Path)
+    parser.add_argument(
+        "--effort",
+        default=None,
+        help="override every player's reasoning effort (e.g. low, medium, high); "
+             "replaces the config file's effort for this run only",
+    )
     parser.add_argument(
         "--reset",
         action="store_true",
@@ -595,6 +662,8 @@ def run_series():
     global live_dir, ROOT
     args = parse_args()
     players = load_players(args.config)
+    if args.effort is not None:
+        players = apply_effort_override(players, args.effort)
     live_dir = args.live_dir.resolve()
     ROOT = resolve_root(live_dir)
     live_dir.mkdir(parents=True, exist_ok=True)
@@ -613,6 +682,8 @@ def run_series():
     else:
         completed = existing_series_rows(next_match_number() - args.start_index + 1)
         append(series_log, f"RESUME at game {args.start_index}/{args.games}")
+    if args.effort is not None:
+        append(series_log, f"EFFORT override: {args.effort} (replaces config for this run)")
     resume_live = args.resume_live
     for game_index in range(args.start_index, args.games + 1):
         if game_index % 2:
@@ -631,6 +702,16 @@ def run_series():
         resume_live = False
         write_summary(summary, completed, args.games, players)
     append(series_log, f"SERIES COMPLETE: {args.games} games")
+    try:
+        final = standings_line(json.loads(summary.read_text()), players)
+    except (OSError, ValueError):
+        final = standings_line(
+            {"games_complete": len(completed),
+             "wins": {}, "draws": 0},
+            players,
+        )
+    append(series_log, f"STANDINGS: {final}")
+    print(f"SERIES COMPLETE: {args.games} games — {final}")
 
 
 def main():
