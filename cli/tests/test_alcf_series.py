@@ -464,6 +464,188 @@ def test_ask_removes_thinking_file_when_every_attempt_fails(tmp_path, monkeypatc
     assert not (tmp_path / "thinking.txt").exists()
 
 
+
+def test_ask_retries_http_502_with_backoff_and_succeeds(tmp_path, monkeypatch):
+    """A transient 502 on first attempt should log, back off, and retry."""
+    import urllib.error
+    board = chess.Board()
+    calls = []
+
+    def fake_request(player, prompt, timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                "https://example.com", 502, "Bad Gateway", {}, None
+            )
+        return (
+            json.dumps({
+                "move": "Nf3",
+                "candidate_moves": ["Nf3"],
+                "rationale": "Dev.",
+                "expected_reply": "Nf6",
+            }),
+            {},
+        )
+
+    monkeypatch.setattr(series, "request_decision", fake_request)
+    # Speed up the test: don't actually sleep on backoff
+    monkeypatch.setattr(series.time, "sleep", lambda s: None)
+
+    decision = series.ask(series.PLAYERS["gpt-oss"], board, [], tmp_path / "log.txt", tmp_path / "decisions.jsonl")
+    assert decision["move"] == "Nf3"
+    assert calls == [180, 180]
+    log = (tmp_path / "log.txt").read_text().lower()
+    assert "502" in log or "bad gateway" in log
+    assert "backoff" in log
+
+
+def test_ask_retries_oserror_and_http_error_as_transient(tmp_path, monkeypatch):
+    """OSError / URLError / HTTPError should all be retried, not crash."""
+    import urllib.error
+    board = chess.Board()
+    attempts = []
+
+    def fake_request(player, prompt, timeout):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise OSError("connection reset")
+        if len(attempts) == 2:
+            raise urllib.error.URLError("timed out")
+        return (
+            json.dumps({"move": "e4", "candidate_moves": ["e4"], "rationale": "r", "expected_reply": ""}),
+            {},
+        )
+
+    monkeypatch.setattr(series, "request_decision", fake_request)
+    monkeypatch.setattr(series.time, "sleep", lambda s: None)
+    decision = series.ask(series.PLAYERS["gpt-oss"], board, [], tmp_path / "log.txt", tmp_path / "decisions.jsonl")
+    assert decision["move"] == "e4"
+    assert len(attempts) == 3
+
+
+def test_game_failed_is_runtime_error_with_match_number():
+    """GameFailed must be catchable as RuntimeError but carry match_number."""
+    cause = RuntimeError("boom")
+    exc = series.GameFailed(42, cause)
+    assert isinstance(exc, RuntimeError)
+    assert exc.match_number == 42
+    assert exc.cause is cause
+
+
+def test_play_one_wraps_exhausted_ask_as_game_failed(tmp_path, monkeypatch):
+    """play_one should raise GameFailed (not bare RuntimeError) on exhausted retries."""
+    # Minimal plumbing: need a live dir with match.json and board state
+    import subprocess
+    root = tmp_path / "root"
+    live = tmp_path / "live"
+    live.mkdir()
+    (root / "games/chess").mkdir(parents=True)
+    # Fake a match record so play_one can find it
+    match_dir = root / "games/chess/match-001"
+    match_dir.mkdir(parents=True)
+    (match_dir / "match.json").write_text(json.dumps({
+        "game": "chess", "match": 1, "status": "live",
+        "seats": {"white": {"name": "A"}, "black": {"name": "B"}},
+        "host": {"name": "HOST"}, "live_dir": str(live),
+    }))
+    monkeypatch.setattr(series, "ROOT", root)
+    # Mock start_match / post / board_from_log to avoid engine deps
+    monkeypatch.setattr(series, "start_match", lambda *a, **k: type("R", (), {"stdout": ""})())
+    # Use a real board with moves
+    (live / "moves.txt").write_text("")
+    (live / "fen.txt").write_text(chess.Board().fen())
+    (live / "names.txt").write_text("A B\n")
+    (live / "series.txt").write_text("1\n")
+    (live / "results.txt").write_text("")
+    # Patch series.next_match_number to return 1 so play_one finds match-001
+    monkeypatch.setattr(series, "next_match_number", lambda: 1)
+    # Make ask always fail
+    def failing_ask(*a, **k):
+        raise RuntimeError("did not return legal SAN after 3 attempts; last response: boom")
+    monkeypatch.setattr(series, "ask", failing_ask)
+    monkeypatch.setattr(series, "post", lambda *a, **k: None)
+
+    series_log = live / "series-runner.log"
+    series_log.write_text("")
+    white = {"name": "A"}
+    black = {"name": "B"}
+    try:
+        series.play_one(live, 1, 1, white, black, series_log, resume_live=False)
+        assert False, "should have raised GameFailed"
+    except series.GameFailed as exc:
+        assert exc.match_number == 1
+        assert "did not return legal SAN" in str(exc.cause)
+    except RuntimeError:
+        assert False, "should be GameFailed, not bare RuntimeError"
+
+
+def test_run_series_continues_after_one_game_failure(tmp_path, monkeypatch):
+    """run_series with --continue-on-failure should keep going after a GameFailed."""
+    root = tmp_path / "root"
+    live = tmp_path / "live"
+    live.mkdir()
+    (root / "games/chess").mkdir(parents=True)
+    # two match records
+    for n in (1, 2):
+        d = root / f"games/chess/match-{n:03d}"
+        d.mkdir(parents=True)
+        d.joinpath("match.json").write_text(json.dumps({
+            "game": "chess", "match": n, "status": "live",
+            "seats": {"white": {"name": "A"}, "black": {"name": "B"}},
+            "host": {"name": "HOST"}, "live_dir": str(live),
+        }))
+    monkeypatch.setattr(series, "ROOT", root)
+    monkeypatch.setattr(series, "resolve_root", lambda live=None: root)
+    (live / "moves.txt").write_text("")
+    (live / "fen.txt").write_text(chess.Board().fen())
+    (live / "names.txt").write_text("A B\n")
+    (live / "series.txt").write_text("1\n")
+    (live / "results.txt").write_text("")
+    (live / "series-runner.log").write_text("")
+    monkeypatch.setattr(series, "reset_live", lambda live: None)
+    monkeypatch.setattr(series, "abandon_live_matches", lambda reason="": ["match-001"])
+    monkeypatch.setattr(series, "write_summary", lambda *a, **k: None)
+    # Make play_one succeed on second game, fail on first
+    calls = []
+    def fake_play_one(live, game_index, games_requested, white, black, series_log, resume_live=False):
+        calls.append(game_index)
+        if game_index == 1:
+            raise series.GameFailed(1, RuntimeError("transient 502"))
+        return (2, "A 1-0 B")
+    monkeypatch.setattr(series, "play_one", fake_play_one)
+    monkeypatch.setattr(series, "existing_series_rows", lambda n: [])
+    monkeypatch.setattr(series, "next_match_number", lambda: 3)
+
+    import sys
+    orig_argv = sys.argv[:]
+    try:
+        sys.argv = ["series", "--games", "2", "--live-dir", str(live)]
+        # run_series will use ROOT override above
+        series.run_series()
+    finally:
+        sys.argv = orig_argv
+
+    assert calls == [1, 2]
+    log = (live / "series-runner.log").read_text()
+    assert "ABANDONED" in log
+    assert "SERIES COMPLETE" in log
+
+
+def test_continue_on_failure_flag_parsing():
+    """--continue-on-failure is on by default, --no-continue-on-failure turns it off."""
+    import sys
+    orig = sys.argv[:]
+    try:
+        sys.argv = ["prog", "--games", "5"]
+        assert series.parse_args().continue_on_failure is True
+        sys.argv = ["prog", "--games", "5", "--continue-on-failure"]
+        assert series.parse_args().continue_on_failure is True
+        sys.argv = ["prog", "--games", "5", "--no-continue-on-failure"]
+        assert series.parse_args().continue_on_failure is False
+    finally:
+        sys.argv = orig
+
+
 def test_apply_effort_override_replaces_every_player():
     players = [
         {"name": "A", "effort": "low"},
