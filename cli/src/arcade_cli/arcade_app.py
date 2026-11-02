@@ -18,6 +18,7 @@ from rich.text import Text
 
 from . import main as arcade
 from . import series
+from . import themes
 
 ROOT = series.resolve_root()
 ENGINE = ROOT / "engine"
@@ -88,18 +89,38 @@ def latest_rationale(live: Path) -> dict | None:
     return rows[-1] if rows else None
 
 
-def decision_markup(rows: list[dict]) -> str:
+def read_thinking(live: Path, now: float | None = None) -> tuple[str, int] | None:
+    """(player, elapsed seconds) while a model is thinking, else None.
+
+    Written by ``series.ask`` as ``<NAME> <unix start>`` and removed when
+    the move lands, so a present file means a turn is in flight. ``now``
+    is injectable for tests.
+    """
+    parts = read_text(live / "thinking.txt").split()
+    if len(parts) != 2:
+        return None
+    try:
+        elapsed = int((time.time() if now is None else now) - float(parts[1]))
+    except ValueError:
+        return None
+    if elapsed < 0:
+        return None
+    return parts[0], elapsed
+
+
+def decision_markup(rows: list[dict], dark: bool = True) -> str:
+    accent = _ACCENTS[dark]
     if not rows:
-        return "[bold #78d2eb]DECISIONS[/]\nWaiting for the first move rationale…"
-    blocks = ["[bold #78d2eb]DECISIONS[/]  [#697386]newest last · j/k scroll · g newest[/]"]
+        return f"[bold {accent['cyan']}]DECISIONS[/]\nWaiting for the first move rationale…"
+    blocks = [f"[bold {accent['cyan']}]DECISIONS[/]  [{accent['muted']}]newest last · j/k scroll · g newest[/]"]
     for row in rows:
         candidates = ", ".join(row.get("candidate_moves", [])) or "—"
         blocks.append(
-            f"\n[#697386]ply {row.get('ply')}[/] [bold]{row.get('player')}[/]"
-            f"\nmove: [bold #d9f4ff]{row.get('move')}[/]"
+            f"\n[{accent['muted']}]ply {row.get('ply')}[/] [bold]{row.get('player')}[/]"
+            f"\nmove: [bold {accent['pale']}]{row.get('move')}[/]"
             f"\ncandidates: {candidates}"
             f"\n{row.get('rationale') or 'No rationale supplied.'}"
-            f"\n[#697386]expected {row.get('expected_reply') or '—'} ·"
+            f"\n[{accent['muted']}]expected {row.get('expected_reply') or '—'} ·"
             f" reasoning tokens {row.get('reasoning_tokens', '—')}[/]"
         )
     return "\n".join(blocks)
@@ -123,8 +144,39 @@ PIECE_VALUE = {
 }
 
 
-def match_markup(board, moves, white, black, game, games, score, status):
-    """The original MATCH/MATERIAL/MOVES panel, derived from authoritative SAN."""
+# Content accents per background: the historical cyan/amber palette is kept
+# for dark terminals; light terminals get darker variants so the MATCH and
+# DECISIONS panels stay readable on near-white surfaces.
+_ACCENTS = {
+    True: {
+        "cyan": "#78d2eb",
+        "amber": "#f0a046",
+        "muted": "#697386",
+        "pale": "#d9f4ff",
+        "slate": "#8a93a6",
+    },
+    False: {
+        "cyan": "#1F5BA5",
+        "amber": "#B45309",
+        "muted": "#5b6478",
+        "pale": "#0b3d66",
+        "slate": "#526079",
+    },
+}
+
+
+def match_markup(board, moves, white, black, game, games, score, status,
+                 standings=None, dark=True, thinking=None):
+    """The original MATCH/MATERIAL/MOVES panel, derived from authoritative SAN.
+
+    ``standings`` is the end-of-series line (``series.standings_line``),
+    shown only when the caller passes it — typically once the series is
+    complete. ``dark`` selects the content accents for the terminal
+    background; the default preserves the historical dark-terminal palette.
+    ``thinking`` is a ``(player, seconds)`` pair for the live turn clock,
+    shown only while a game is in progress.
+    """
+    accent = _ACCENTS[dark]
     replay = chess.Board()
     rows = []
     for index, san in enumerate(moves):
@@ -139,11 +191,11 @@ def match_markup(board, moves, white, black, game, games, score, status):
         if capture:
             mark = "×" + mark
         name = white if index % 2 == 0 else black
-        hue = "#78d2eb" if index % 2 == 0 else "#f0a046"
+        hue = accent["cyan"] if index % 2 == 0 else accent["amber"]
         rows.append(
-            f"[#697386]{index // 2 + 1:>3}.[/] [{hue}]{name[:6]:<6}[/] "
+            f"[{accent['muted']}]{index // 2 + 1:>3}.[/] [{hue}]{name[:6]:<6}[/] "
             f"{piece.symbol().upper() if piece else '?'} "
-            f"[#8a93a6]{chess.square_name(move.from_square)}→{chess.square_name(move.to_square)}[/] {mark}"
+            f"[{accent['slate']}]{chess.square_name(move.from_square)}→{chess.square_name(move.to_square)}[/] {mark}"
         )
 
     material = sum(
@@ -152,33 +204,41 @@ def match_markup(board, moves, white, black, game, games, score, status):
     )
     if material:
         leader = white if material > 0 else black
-        hue = "#78d2eb" if material > 0 else "#f0a046"
+        hue = accent["cyan"] if material > 0 else accent["amber"]
         margin = abs(material)
         filled = max(1, min(14, round(margin / 15 * 14)))
         material_text = (
             f"[{hue}]{leader}[/] [bold]+{margin}[/]\n"
             f"[{hue}]{'█' * filled}[/][#4d5668]{'·' * (14 - filled)}[/]\n"
-            f"[#697386]ahead by {margin} point{'s' if margin != 1 else ''}[/]"
+            f"[{accent['muted']}]ahead by {margin} point{'s' if margin != 1 else ''}[/]"
         )
     else:
-        material_text = "[#697386]level  ··············[/]"
+        material_text = f"[{accent['muted']}]level  ··············[/]"
 
     if board.is_checkmate():
         winner = black if board.turn else white
-        state = f"[bold #f0a046]checkmate — {winner} wins[/]"
+        state = f"[bold {accent['amber']}]checkmate — {winner} wins[/]"
     elif board.is_game_over(claim_draw=True):
-        state = f"[#8a93a6]game over — {board.outcome(claim_draw=True).termination.name.lower().replace('_', ' ')}[/]"
+        state = f"[{accent['slate']}]game over — {board.outcome(claim_draw=True).termination.name.lower().replace('_', ' ')}[/]"
     else:
         turn = white if board.turn else black
         state = f"{turn} to move" + (" — CHECK" if board.is_check() else "")
 
-    moves_text = "\n".join(reversed(rows[-12:])) if rows else "[#697386]no moves yet[/]"
-    return (
-        f"[bold #78d2eb]MATCH[/]\nGame {game}/{games} · ply {len(rows)} · move {(len(rows) + 1) // 2}\n"
-        f"{white} vs {black}\n{score}\n{state}\nstatus: {status}\n\n"
-        f"[bold #8a93a6]MATERIAL[/]\n{material_text}\n\n"
-        f"[bold #8a93a6]MOVES[/]\n{moves_text}"
+    moves_text = "\n".join(reversed(rows[-12:])) if rows else f"[{accent['muted']}]no moves yet[/]"
+    panel = (
+        f"[bold {accent['cyan']}]MATCH[/]\nGame {game}/{games} · ply {len(rows)} · move {(len(rows) + 1) // 2}\n"
+        f"{white} vs {black}\n{score}\n{state}\nstatus: {status}"
     )
+    if thinking is not None:
+        name, seconds = thinking
+        panel += f"\nthinking: {name} {seconds}s"
+    panel += (
+        f"\n\n[bold {accent['slate']}]MATERIAL[/]\n{material_text}\n\n"
+        f"[bold {accent['slate']}]MOVES[/]\n{moves_text}"
+    )
+    if standings:
+        panel += f"\n\n[bold {accent['cyan']}]STANDINGS[/]\n{standings}"
+    return panel
 
 
 class BrailleBoard(Static):
@@ -204,6 +264,7 @@ class BrailleBoard(Static):
         self.black = "BLACK"
         self.moves = []
         self.renderer = load_dot_renderer()
+        self.dark = True
         self.fly_animation = None
         self.replay_moves = []
         self.replay_index = 0
@@ -281,6 +342,11 @@ class BrailleBoard(Static):
         self._paint()
 
     def _paint(self) -> None:
+        # The dot renderer paints its own RGB background, so the palette has
+        # to follow the terminal theme explicitly — CSS can't reach in here.
+        want = "dark" if self.dark else "light"
+        if getattr(self.renderer, "_palette", "dark") != want:
+            self.renderer.set_palette(want)
         if self.style_name == "compact":
             self._paint_compact()
             return
@@ -312,23 +378,27 @@ class BrailleBoard(Static):
         ))
 
     def _paint_compact(self) -> None:
+        if self.dark:
+            black, white, dim, faint = "#f0a046", "#d9f4ff", "#697386", "#33485f"
+        else:
+            black, white, dim, faint = "#B45309", "#0b3d66", "#5b6478", "#b9c2cf"
         text = Text(justify="center")
-        text.append(f"{self.black}\n\n", style="bold #f0a046")
+        text.append(f"{self.black}\n\n", style=f"bold {black}")
         for rank in range(7, -1, -1):
-            text.append(f"{rank + 1}  ", style="#697386")
+            text.append(f"{rank + 1}  ", style=dim)
             for file in range(8):
                 square = chess.square(file, rank)
                 piece = self.board.piece_at(square)
                 if piece:
                     glyph = self.GLYPHS[piece.piece_type]
-                    style = "bold #d9f4ff" if piece.color else "bold #f0a046"
+                    style = f"bold {white}" if piece.color else f"bold {black}"
                     text.append(f" {glyph} ", style=style)
                 else:
                     cell = "·" if (file + rank) % 2 else " "
-                    text.append(f" {cell} ", style="#33485f")
+                    text.append(f" {cell} ", style=faint)
             text.append("\n")
-        text.append("\n   a  b  c  d  e  f  g  h\n", style="#697386")
-        text.append(self.white, style="bold #d9f4ff")
+        text.append("\n   a  b  c  d  e  f  g  h\n", style=dim)
+        text.append(self.white, style=f"bold {white}")
         super().update(text)
 
     def update(self, board: chess.Board, white: str, black: str) -> None:
@@ -337,10 +407,10 @@ class BrailleBoard(Static):
 
 class ArcadeApp(App):
     CSS = """
-    Screen { background: #12151c; color: #d0d8e8; }
-    Header, Footer { background: #171b24; color: #8a93a6; }
+    Screen { background: $background; color: $foreground; }
+    Header, Footer { background: $surface; color: $foreground; }
     #body { height: 1fr; }
-    #board-wrap { width: 1fr; height: 1fr; align: center middle; border: round #334054; }
+    #board-wrap { width: 1fr; height: 1fr; align: center middle; border: round $border; }
     # The board widget must retain the entire pane. The renderer then receives
     # stable pane dimensions instead of feeding its content dimensions back
     # into the next render and shrinking from 64×30 to 34×21.
@@ -348,11 +418,11 @@ class ArcadeApp(App):
     # must left-anchor those lines or it centers their leading padding again.
     #board { width: 100%; height: 100%; content-align: left middle; text-style: bold; }
     #side { width: 46; height: 1fr; }
-    .panel { border: round #334054; padding: 1 2; margin-left: 1; }
+    .panel { border: round $border; padding: 1 2; margin-left: 1; }
     #match { height: 1fr; min-height: 22; }
     #decisions { height: 1fr; min-height: 16; scrollbar-size: 1 1; }
     #events { height: 9; }
-    .title { color: #78d2eb; text-style: bold; }
+    .title { color: $primary; text-style: bold; }
     """
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -376,8 +446,16 @@ class ArcadeApp(App):
         board_style: str = "original",
         config: Path | None = None,
         run_matches: bool = True,
+        theme: str | None = None,
+        effort: str | None = None,
     ):
         super().__init__()
+        if themes.HAS_THEME_SUPPORT:
+            for bundled in themes.ALL_THEMES:
+                self.register_theme(bundled)
+            self.theme = themes.resolve_theme(theme)
+        self.is_light = str(getattr(self, "theme", "") or "").endswith("light")
+        self.effort = effort
         self.live = live.resolve()
         self.games = games
         self.start_index = start_index
@@ -431,6 +509,8 @@ class ArcadeApp(App):
             command.append("--resume-live")
         if self.config:
             command.extend(("--config", str(self.config)))
+        if self.effort is not None:
+            command.extend(("--effort", self.effort))
         env = {**os.environ, "ARCADE_LIVE": str(self.live)}
         env["AI_AGENT_ARCADE_ROOT"] = str(ROOT)
         self.process = subprocess.Popen(
@@ -560,12 +640,29 @@ class ArcadeApp(App):
             white=names[0], black=names[1], ply=len(moves), board=board,
             rationale=rationale, score=score_line(self.live, names[0], names[1], summary), status=status,
         )
-        self.query_one("#board", BrailleBoard).update_position(board, snap.white, snap.black, moves)
+        # The active theme can change at runtime via the command palette, so
+        # re-derive the background here rather than trusting startup state.
+        self.is_light = str(getattr(self, "theme", "") or "").endswith("light")
+        dark = not self.is_light
+        standings = None
+        if complete and (status == "complete" or status.startswith("failed")):
+            try:
+                standings = series.standings_line(summary)
+            except (AttributeError, TypeError, ValueError):
+                standings = None
+        board_widget = self.query_one("#board", BrailleBoard)
+        if board_widget.dark != dark:
+            board_widget.dark = dark
+        board_widget.update_position(board, snap.white, snap.black, moves)
+        thinking = None
+        if status in ("running", "paused") and not self.replaying:
+            thinking = read_thinking(self.live)
         self.query_one("#match", Static).update(match_markup(
-            board, moves, snap.white, snap.black, snap.game, snap.games, snap.score, snap.status
+            board, moves, snap.white, snap.black, snap.game, snap.games, snap.score, snap.status,
+            standings=standings, dark=dark, thinking=thinking,
         ))
         if len(history) != self.last_decision_count or not self.decisions_rendered:
-            self.query_one("#decision", Static).update(decision_markup(history))
+            self.query_one("#decision", Static).update(decision_markup(history, dark=dark))
             self.query_one("#decisions", VerticalScroll).scroll_end(animate=False)
             self.last_decision_count = len(history)
             self.decisions_rendered = True
@@ -575,7 +672,7 @@ class ArcadeApp(App):
             lines = read_text(events_path).splitlines()
             events = self.query_one("#events", RichLog)
             events.clear()
-            events.write("[bold #78d2eb]SERIES[/]")
+            events.write("[bold $primary]SERIES[/]")
             for line in lines[-8:]:
                 events.write(line)
             if self.runner_error:
@@ -605,6 +702,19 @@ def main() -> None:
         default="original",
         help="original = animated dot field (default); compact = dense glyph grid",
     )
+    parser.add_argument(
+        "--theme",
+        choices=themes.THEME_NAMES,
+        default=None,
+        help="Textual theme (default: ansi-dark/ansi-light auto-detected from "
+             "the terminal background; ARCADE_THEME overrides the detection)",
+    )
+    parser.add_argument(
+        "--effort",
+        default=None,
+        help="override every player's reasoning effort for this run "
+             "(e.g. low, medium, high); replaces the config file's effort",
+    )
     args = parser.parse_args()
     if args.reset:
         live = args.live_dir.resolve()
@@ -619,6 +729,8 @@ def main() -> None:
         board_style=args.board_style,
         config=args.config,
         run_matches=not args.view,
+        theme=args.theme,
+        effort=args.effort,
     ).run()
 
 

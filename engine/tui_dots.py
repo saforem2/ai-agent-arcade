@@ -122,6 +122,67 @@ DEBRIS = (255, 178, 96)
 CHECKC = (242, 84, 94)
 TEXT, TDIM, LABEL = (204, 212, 228), (118, 128, 148), (92, 102, 122)
 SLATE, FOOT = (136, 145, 164), (86, 94, 110)
+
+# Two palettes for the same density design: the board paints its own
+# background (braille cells carry explicit RGB), so a light terminal theme
+# needs a light renderer palette too — Textual CSS can't reach in here.
+# ``dark`` is the historical look and the default; ``light`` keeps the
+# density structure (ambient/light/dark/influence tiers) with dark dots
+# on a near-white field.
+PALETTE_DARK = {
+    "PANEL": (18, 21, 28),
+    "SQL": (34, 39, 50), "SQD": (26, 30, 39),
+    "NEUTRAL": (104, 116, 138),
+    "AMBIENT": (52, 58, 72),
+    "ICE": (125, 212, 236), "EMBER": (240, 162, 74),
+    "MASS": (255, 176, 62),
+    "PIP": (150, 170, 200),
+    "W_SOLID": (240, 249, 255),
+    "RIM": (206, 226, 248),
+    "W_GLYPH": (240, 249, 255), "B_GLYPH": (255, 190, 88),
+    "WAKE_W": (170, 226, 245), "WAKE_B": (250, 196, 130),
+    "DEBRIS": (255, 178, 96),
+    "CHECKC": (242, 84, 94),
+    "TEXT": (204, 212, 228), "TDIM": (118, 128, 148), "LABEL": (92, 102, 122),
+    "SLATE": (136, 145, 164), "FOOT": (86, 94, 110),
+}
+PALETTE_LIGHT = {
+    "PANEL": (238, 238, 238),
+    "SQL": (250, 250, 252), "SQD": (226, 231, 238),
+    "NEUTRAL": (148, 156, 170),
+    "AMBIENT": (198, 204, 212),
+    "ICE": (2, 132, 199), "EMBER": (217, 119, 6),
+    "MASS": (146, 64, 14),
+    "PIP": (238, 242, 248),
+    "W_SOLID": (23, 32, 51),
+    "RIM": (40, 55, 80),
+    "W_GLYPH": (31, 91, 165), "B_GLYPH": (180, 83, 9),
+    "WAKE_W": (2, 132, 199), "WAKE_B": (217, 119, 6),
+    "DEBRIS": (180, 83, 9),
+    "CHECKC": (185, 28, 28),
+    "TEXT": (48, 48, 48), "TDIM": (90, 100, 115), "LABEL": (100, 110, 125),
+    "SLATE": (82, 96, 121), "FOOT": (120, 130, 145),
+}
+PALETTES = {"dark": PALETTE_DARK, "light": PALETTE_LIGHT}
+_palette = "dark"
+
+
+def set_palette(name):
+    """Switch the renderer's colour palette (``dark`` or ``light``).
+
+    Densities, geometry, and animation are untouched — only the RGB
+    globals above are reassigned, so callers holding the module (or its
+    attributes via ``import tui_dots``) see the switch immediately.
+    Unknown names raise; the default ``dark`` palette is byte-identical
+    to the historical constants.
+    """
+    global _palette
+    if name not in PALETTES:
+        raise ValueError(f"unknown tui_dots palette {name!r} (expected 'dark' or 'light')")
+    for key, value in PALETTES[name].items():
+        globals()[key] = value
+    _palette = name
+    return name
 GLYPH = {'P': '♟', 'N': '♞', 'B': '♝', 'R': '♜', 'Q': '♛', 'K': '♚'}
 ORTH = ((1, 0), (-1, 0), (0, 1), (0, -1))
 SUPPORT = (0.25, 0.62, 0.86, 1.0, 1.0)

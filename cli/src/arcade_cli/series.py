@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run a referee-verified ALCF chess series through arcade's file bus."""
 
 import argparse
@@ -9,9 +8,8 @@ import subprocess
 import sys
 import time
 import tomllib
-import urllib.request
 import urllib.error
-import shutil
+import urllib.request
 from importlib.resources import as_file, files
 from pathlib import Path
 
@@ -87,7 +85,7 @@ def _packaged_engine_version():
     try:
         from importlib.metadata import version
         return version("ai-agent-arcade")
-    except Exception:
+    except Exception:  # noqa: BLE001 - fallback when package not installed
         return "dev"
 
 
@@ -258,6 +256,17 @@ def decision_response(body):
 
 
 def ask(player, board, moves, log, decision_log):
+    live = Path(decision_log).parent
+    thinking = live / "thinking.txt"
+    thinking.write_text(f"{player['name']} {time.time()}\n")
+    started = time.monotonic()
+    try:
+        return _ask(player, board, moves, log, decision_log, started)
+    finally:
+        thinking.unlink(missing_ok=True)
+
+
+def _ask(player, board, moves, log, decision_log, started):
     legal = [board.san(move) for move in board.legal_moves]
     base_prompt = f"""You are {player['name']} in a chess match against another language model.
 No chess engine, tools, code execution, web search, or outside assistance. Analyze the position yourself.
@@ -272,11 +281,28 @@ This is a concise self-reported rationale, not hidden chain-of-thought."""
         prompt = base_prompt
         if attempt > 1:
             prompt += "\nYour previous response was invalid. Copy exactly one token from the legal SAN list."
+            # Back off so a transient 502 / rate-limit / cold-start doesn't
+            # burn all 3 attempts against the same window. Kept short so a
+            # healthy retry still lands in seconds, not minutes.
+            backoff = min(30, 2 ** (attempt - 1))
+            append(log, f"backoff: sleeping {backoff}s before attempt {attempt}")
+            time.sleep(backoff)
         append(log, f"Ply {len(moves) + 1}: thinking (attempt {attempt})")
         try:
             raw, usage = request_decision(player, prompt, timeout=180)
-        except (subprocess.TimeoutExpired, TimeoutError, urllib.error.URLError) as exc:
-            append(log, f"timeout: {exc}")
+        except (subprocess.TimeoutExpired, TimeoutError, urllib.error.URLError,
+                urllib.error.HTTPError, OSError) as exc:
+            # HTTPError is a URLError subclass but listed explicitly so a
+            # future refactor of the except tuple doesn't silently drop it.
+            append(log, f"transient error on attempt {attempt}: {type(exc).__name__}: {exc}")
+            last_raw = str(exc)
+            continue
+        except Exception as exc:  # noqa: BLE001 - gateway bugs shouldn't kill the game
+            # Anything else from the HTTP/JSON path (e.g. malformed body,
+            # missing choices[0]) is still retryable — a bug in the gateway
+            # response shouldn't kill the game on first contact.
+            append(log, f"unexpected error on attempt {attempt}: {type(exc).__name__}: {exc}")
+            last_raw = str(exc)
             continue
         append(log, f"response: {raw or '(empty)'}")
         last_raw = raw or last_raw
@@ -287,11 +313,13 @@ This is a concise self-reported rationale, not hidden chain-of-thought."""
                 "player": player["name"],
                 "model": player["model"],
                 "fen": board.fen(),
+                "thinking_seconds": round(time.monotonic() - started, 1),
                 **decision,
                 **usage,
             }
             append(decision_log, json.dumps(row, ensure_ascii=False))
             return decision
+        append(log, f"unparseable response on attempt {attempt}: {' '.join((raw or '(empty response)').split())[:300]}")
     detail = " ".join((last_raw or "(empty response)").split())[:300]
     raise RuntimeError(
         f"{player['name']} did not return legal SAN after 3 attempts; last response: {detail}"
@@ -425,10 +453,22 @@ def play_one(live, game_index, games_requested, white, black, series_log, resume
         player = white if len(moves) % 2 == 0 else black
         if reconcile_pending(live, player, board, logs[player["name"]]):
             continue
-        decision = ask(player, board, moves, logs[player["name"]], decision_log)
+        turn_started = time.monotonic()
+        try:
+            decision = ask(player, board, moves, logs[player["name"]], decision_log)
+        except RuntimeError as exc:
+            # ask() only raises RuntimeError for exhausted move retries; wrap
+            # it so the caller can abandon one game without killing the series.
+            raise GameFailed(match_number, exc) from exc
         san = decision["move"]
-        append(series_log, f"  ply {len(moves) + 1}: {player['name']} {san}")
-        output = apply_move(live, player, san, logs[player["name"]])
+        elapsed = time.monotonic() - turn_started
+        append(series_log, f"  ply {len(moves) + 1}: {player['name']} {san} ({elapsed:.0f}s)")
+        try:
+            output = apply_move(live, player, san, logs[player["name"]])
+        except subprocess.CalledProcessError as exc:
+            # A referee/pipe failure during apply is the same class: the ply
+            # is lost, the game is recoverable, the series should continue.
+            raise GameFailed(match_number, exc) from exc
         if "GAMEOVER" in output:
             break
         time.sleep(0.2)
@@ -498,7 +538,44 @@ def write_summary(path, rows, games_requested, players=None):
         "draws": draws,
         "matches": [{"match": number, "result": result} for number, result in rows],
     }
+    payload["standings"] = standings_line(payload, players)
     path.write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def standings_line(summary, players=None):
+    """One-line celebration of a finished (or in-progress) series.
+
+    Decisive: ``INKLING-BF16 won 6/10 games!!! (1 draw)``.
+    Tied: ``Dead even: A 3 — 3 B across 6 games (+2 draws)``.
+    All draws: ``All 10 games drawn — dead even``.
+    """
+    wins = dict(summary.get("wins") or {})
+    draws = summary.get("draws", 0)
+    complete = summary.get("games_complete", 0)
+    if not complete:
+        return "No games complete yet."
+    game_word = "game" if complete == 1 else "games"
+    if players:
+        order = [player["name"] for player in players]
+    else:
+        order = sorted(wins, key=lambda name: (-wins.get(name, 0), name))
+    ranked = sorted(order, key=lambda name: (-wins.get(name, 0), name))
+    leader = ranked[0]
+    leader_wins = wins.get(leader, 0)
+    runner = ranked[1] if len(ranked) > 1 else None
+    runner_wins = wins.get(runner, 0) if runner else 0
+    draw_word = "draw" if draws == 1 else "draws"
+    if leader_wins == 0 and runner_wins == 0:
+        return f"All {complete} {game_word} drawn — dead even"
+    if runner is not None and leader_wins == runner_wins:
+        line = f"Dead even: {leader} {leader_wins} — {runner_wins} {runner} across {complete} {game_word}"
+        if draws:
+            line += f" (+{draws} {draw_word})"
+        return line
+    line = f"{leader} won {leader_wins}/{complete} {game_word}!!!"
+    if draws:
+        line += f" ({draws} {draw_word})"
+    return line
 
 
 def existing_series_rows(before_match):
@@ -517,7 +594,7 @@ RESET_TRUNCATE = (
     "moves.txt", "fen.txt", "decision_log.jsonl", "banner.txt", "result.txt",
     "white-model.log", "black-model.log", "series-runner.log", "stage_log.txt",
 )
-RESET_UNLINK = ("pending.txt", "series-summary.json")
+RESET_UNLINK = ("pending.txt", "series-summary.json", "thinking.txt")
 RESET_PRESERVE = ("moves.txt", "decision_log.jsonl", "names.txt", "series-runner.log", "fen.txt")
 
 
@@ -576,6 +653,29 @@ def reset_live(live):
     return saved
 
 
+def apply_effort_override(players, effort):
+    """Return players with every ``effort`` replaced by the CLI override.
+
+    Kept separate from ``run_series`` so the override is unit-testable
+    without launching a series. ``effort`` is passed through to the
+    provider as ``reasoning_effort``; validation lives provider-side.
+    """
+    return [{**player, "effort": effort} for player in players]
+
+
+class GameFailed(RuntimeError):
+    """A single game exhausted all move retries and was abandoned.
+
+    Carries the match number so the caller can mark it abandoned and keep
+    the series running. Distinguishing this from other RuntimeErrors is what
+    lets one bad ply fail one game instead of the whole 20-game series.
+    """
+    def __init__(self, match_number, cause):
+        super().__init__(str(cause))
+        self.match_number = match_number
+        self.cause = cause
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=20)
@@ -584,9 +684,29 @@ def parse_args():
     parser.add_argument("--resume-live", action="store_true")
     parser.add_argument("--config", type=Path)
     parser.add_argument(
+        "--effort",
+        default=None,
+        help="override every player's reasoning effort (e.g. low, medium, high); "
+             "replaces the config file's effort for this run only",
+    )
+    parser.add_argument(
         "--reset",
         action="store_true",
         help="abandon an interrupted live game (kept under abandoned/) and start clean",
+    )
+    parser.add_argument(
+        "--continue-on-failure",
+        action="store_true",
+        default=True,
+        help="when a game exhausts all move retries, abandon it and continue "
+             "the series instead of exiting 1 (default: on; pass "
+             "--no-continue-on-failure to restore the old hard-fail)",
+    )
+    parser.add_argument(
+        "--no-continue-on-failure",
+        dest="continue_on_failure",
+        action="store_false",
+        help="disable --continue-on-failure",
     )
     return parser.parse_args()
 
@@ -595,6 +715,8 @@ def run_series():
     global live_dir, ROOT
     args = parse_args()
     players = load_players(args.config)
+    if args.effort is not None:
+        players = apply_effort_override(players, args.effort)
     live_dir = args.live_dir.resolve()
     ROOT = resolve_root(live_dir)
     live_dir.mkdir(parents=True, exist_ok=True)
@@ -613,24 +735,64 @@ def run_series():
     else:
         completed = existing_series_rows(next_match_number() - args.start_index + 1)
         append(series_log, f"RESUME at game {args.start_index}/{args.games}")
+    if args.effort is not None:
+        append(series_log, f"EFFORT override: {args.effort} (replaces config for this run)")
     resume_live = args.resume_live
+    failures = 0
     for game_index in range(args.start_index, args.games + 1):
         if game_index % 2:
             white, black = players
         else:
             white, black = players[1], players[0]
-        completed.append(play_one(
-            live_dir,
-            game_index,
-            args.games,
-            white,
-            black,
-            series_log,
-            resume_live=resume_live,
-        ))
+        try:
+            completed.append(play_one(
+                live_dir,
+                game_index,
+                args.games,
+                white,
+                black,
+                series_log,
+                resume_live=resume_live,
+            ))
+        except GameFailed as exc:
+            if not getattr(args, "continue_on_failure", True):
+                raise
+            failures += 1
+            # Abandon this game's match.json so the next arcade start isn't
+            # blocked by a still-live record, keep the partial transcript for
+            # forensics, and advance to the next match-NNN.
+            abandoned = abandon_live_matches(reason=f"game failed: {exc.cause}")
+            tag = abandoned[0] if abandoned else f"match-{exc.match_number:03d}"
+            append(series_log, f"GAME {game_index}/{args.games} {tag} ABANDONED after retries: {exc.cause}")
+            print(f"game {game_index} abandoned ({tag}): {exc.cause} — continuing series", file=sys.stderr)
+            # Reset live dir for next game, preserving what failed for debugging
+            saved = None
+            try:
+                saved = reset_live(live_dir)
+            except Exception as reset_exc:  # noqa: BLE001 - best-effort cleanup
+                append(series_log, f"  (reset after failure also failed: {reset_exc})")
+            if saved:
+                append(series_log, f"  abandoned transcript kept at {saved}")
+            # Don't count this game as completed; write summary from real results.
+            write_summary(summary, completed, args.games, players)
+            resume_live = False
+            continue
         resume_live = False
         write_summary(summary, completed, args.games, players)
-    append(series_log, f"SERIES COMPLETE: {args.games} games")
+    if failures:
+        append(series_log, f"SERIES COMPLETE: {args.games} games ({failures} abandoned after retries)")
+    else:
+        append(series_log, f"SERIES COMPLETE: {args.games} games")
+    try:
+        final = standings_line(json.loads(summary.read_text()), players)
+    except (OSError, ValueError):
+        final = standings_line(
+            {"games_complete": len(completed),
+             "wins": {}, "draws": 0},
+            players,
+        )
+    append(series_log, f"STANDINGS: {final}")
+    print(f"SERIES COMPLETE: {args.games} games — {final}")
 
 
 def main():

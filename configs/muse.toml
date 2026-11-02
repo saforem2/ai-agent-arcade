@@ -1,0 +1,15 @@
+version = 1
+
+[players.one]
+name = "INKLING-BF16"
+harness = "alcf"
+base_url = "https://inference-api.alcf.anl.gov/resource_server/minerva/api/v1"
+model = "inkling-bf16"
+effort = "medium"
+
+[players.two]
+name = "MUSE-SPARK-BF16"
+harness = "alcf"
+base_url = "https://inference-api.alcf.anl.gov/resource_server/minerva/api/v1"
+model = "muse-spark-bf16"
+effort = "medium"
