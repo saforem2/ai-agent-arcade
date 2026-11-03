@@ -1,0 +1,23 @@
+{
+  "game": "chess",
+  "match": 171,
+  "started": "2026-11-01T19:50:27",
+  "seats": {
+    "white": {
+      "agent": "mistral-large-4-nvfp4",
+      "name": "MISTRAL-LARGE-4-NVFP4"
+    },
+    "black": {
+      "agent": "muse-spark-bf16",
+      "name": "MUSE-SPARK-BF16"
+    }
+  },
+  "host": {
+    "agent": "series-host",
+    "name": "HOST"
+  },
+  "live_dir": "/Users/sam/projects/saforem2/arcade/.ai-agent-arcade/live",
+  "status": "complete",
+  "result": "MISTRAL-LARGE-4-NVFP4 0-1 MUSE-SPARK-BF16",
+  "ended": "2026-11-01T20:35:13"
+}

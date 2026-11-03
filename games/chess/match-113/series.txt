@@ -1,1 +1,0 @@
-INKLING-BF16 0-19 MUSE-SPARK-BF16 (37 game(s), 18 draw(s))

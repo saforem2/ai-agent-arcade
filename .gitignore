@@ -26,3 +26,13 @@ frames/
 # Live runtime (ephemeral — archived into games/ on completion)
 .ai-agent-arcade/
 tasks/
+
+# Archived matches (reproducible via `uvx ai-agent-arcade --games N`)
+# Keep curated fixtures: match-009 (README verify + GIF) and match-171
+# (MISTRAL×MUSE-SPARK showcase). Others are local cache.
+# Note: ignore contents, not the dir itself, so ! can re-include fixtures.
+games/chess/match-*/
+!games/chess/match-009/
+!games/chess/match-171/
+!games/chess/match-009/**
+!games/chess/match-171/**

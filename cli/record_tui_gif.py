@@ -38,12 +38,12 @@ def svg_to_png(svg: Path, png: Path, width: int) -> None:
     subprocess.run([magick, "-density", "160", str(svg), "-resize", f"{width}x", str(png)], check=True)
 
 
-async def record(match: Path, out: Path, scratch: Path, frames: int, fps: int, size, width: int):
+async def record(match: Path, out: Path, scratch: Path, frames: int, fps: int, size, width: int, theme: str | None = None):
     scratch.mkdir(parents=True, exist_ok=True)
     for stale in scratch.glob("frame-*"):
         stale.unlink()
 
-    app = ArcadeApp(match, 1, 1, True, run_matches=False)
+    app = ArcadeApp(match, 1, 1, True, run_matches=False, theme=theme)
     images: list[Path] = []
 
     async with app.run_test(size=size) as pilot:
@@ -94,6 +94,7 @@ def main() -> None:
     parser.add_argument("--cols", type=int, default=150)
     parser.add_argument("--rows", type=int, default=46)
     parser.add_argument("--width", type=int, default=1400)
+    parser.add_argument("--theme", type=str, default=None, choices=["ansi-dark", "ansi-light", "pbs-dark", "pbs-light"], help="Textual theme (default: auto-detect from terminal)")
     args = parser.parse_args()
 
     out, count = asyncio.run(
@@ -105,6 +106,7 @@ def main() -> None:
             args.fps,
             (args.cols, args.rows),
             args.width,
+            args.theme,
         )
     )
     print(f"wrote {out} ({count} frames at {args.fps}fps)")

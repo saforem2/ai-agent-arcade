@@ -88,7 +88,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("archive", type=Path)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "docs/assets")
+    parser.add_argument("--palette", type=str, default=None, choices=["dark", "light"], help="dot-renderer palette (default: dark)")
+    parser.add_argument("--suffix", type=str, default="", help="filename suffix, e.g. '-light' produces alcf-chess-replay-light.gif")
     args = parser.parse_args()
+    if args.palette:
+        tui_dots.set_palette(args.palette)
     archive = args.archive.resolve()
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -104,11 +108,11 @@ def main():
     sans = (archive / "moves.txt").read_text().split()
     final = tui_dots.build(sans)
     still = ansi_image(capture_render(final, now=100.0))
-    still_path = out / "alcf-chess-board.png"
+    still_path = out / f"alcf-chess-board{args.suffix}.png"
     still.save(still_path, optimize=True)
 
     frames = replay_frames(sans)
-    gif_path = out / "alcf-chess-replay.gif"
+    gif_path = out / f"alcf-chess-replay{args.suffix}.gif"
     frames[0].save(
         gif_path,
         save_all=True,

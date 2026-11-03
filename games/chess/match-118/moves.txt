@@ -1,1 +1,0 @@
-e4 Nf6 e5 d6 d4 Nc6 Bb5 Bd7 Bxc6 dxe5 Bxd7+ Kxd7 dxe5+ Ke8 exf6 Qd6 Qxd6 Rc8 fxe7 Rg8 Qd8+ Rxd8 exf8=Q+ Kxf8 Nf3 Ke7 Bg5+ Ke6 Nd4+ Kd6 Bxd8 Rh8 Bxc7+ Kxc7 Ne6+ Kc8 Nxg7 Kd7 Ne6 Kxe6 Nc3 Ke7 Nd5+ Ke6 Nc7+ Ke7 Nd5+ Ke6 Nf4+ Ke7

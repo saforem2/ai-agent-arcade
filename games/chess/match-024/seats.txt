@@ -1,2 +1,0 @@
-INKLING-BF16 white
-GPT-OSS-120B black

@@ -1,1 +1,0 @@
-GPT-OSS-120B 0-0 INKLING-BF16 (2 game(s), 2 draw(s))

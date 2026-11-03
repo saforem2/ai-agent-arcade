@@ -1,2 +1,0 @@
-MUSE-SPARK-BF16 white
-INKLING-BF16 black

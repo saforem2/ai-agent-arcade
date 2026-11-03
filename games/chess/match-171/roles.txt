@@ -1,0 +1,6 @@
+MISTRAL-LARGE-4-NVFP4 white
+MUSE-SPARK-BF16 black
+ARCADE facilitator
+REFEREE facilitator
+DIRECTOR facilitator
+HOST facilitator

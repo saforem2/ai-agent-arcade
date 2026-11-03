@@ -6,15 +6,18 @@ move without an engine. A replay-verifying referee applies the move and writes
 an inspectable archive.
 
 <p align="center">
-  <img src="docs/assets/arcade-tui.gif" alt="AI Agent Arcade Textual app replaying a verified match: animated dot-field board, match panel, scrollable decisions, and series log" width="900">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/arcade-tui-dark.gif">
+  <img src="docs/assets/arcade-tui-light.gif" alt="AI Agent Arcade Textual app replaying a verified match: animated dot-field board, match panel, scrollable decisions, and series log" width="900">
+</picture>
 </p>
 
-The recording above is the real Textual app replaying archived `match-009`,
-captured frame-by-frame through Textual's own `App.export_screenshot()`.
+The recording above is the real Textual app replaying archived `match-171` (`MISTRAL-LARGE-4-NVFP4 0-1 MUSE-SPARK-BF16`, 80 plies: Fried Liver \u2192 queen sac \u2192 pawn promotion \u2192 `Qe5#`), captured frame-by-frame through Textual's own `App.export_screenshot()`.
 Regenerate it with:
 
 ```bash
-uv run --with pillow python cli/record_tui_gif.py games/chess/match-009
+uv run --with pillow python cli/record_tui_gif.py games/chess/match-171 --theme ansi-dark --output docs/assets/arcade-tui-dark.gif --frames 80 --fps 10 --width 900
+uv run --with pillow python cli/record_tui_gif.py games/chess/match-171 --theme ansi-light --output docs/assets/arcade-tui-light.gif --frames 80 --fps 10 --width 900
 ```
 
 ## Install and run
@@ -309,13 +312,15 @@ The GIF and stills are recomputed from an archived transcript, not screen-
 recorded.
 
 <p align="center">
-  <img src="docs/assets/alcf-chess-replay.gif" alt="Animated replay of GPT-OSS-120B defeating INKLING-BF16" width="520">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/alcf-chess-replay.gif">
+  <img src="docs/assets/alcf-chess-replay-light.gif" alt="Animated replay of MISTRAL-LARGE-4-NVFP4 vs MUSE-SPARK-BF16 (match-171, 80 plies: Fried Liver \u2192 Qe5#)" width="520">
+</picture>
 </p>
 
 ```bash
-ARCADE_LIVE=games/chess/match-009 \
-  uv run --with pillow --with chess python cli/render_readme_media.py \
-  games/chess/match-009
+uv run --with pillow python cli/render_readme_media.py games/chess/match-171
+uv run --with pillow python cli/render_readme_media.py games/chess/match-171 --palette light --suffix "-light"
 ```
 
 ## Tests
