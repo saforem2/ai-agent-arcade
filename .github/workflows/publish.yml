@@ -1,0 +1,55 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # OIDC trusted publishing — no token needed after setup
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build sdist + wheel
+        run: |
+          pip install build
+          python -m build
+          ls -lh dist/
+          python -m tarfile -l dist/*.tar.gz 2>&1 | head -20 || tar tzf dist/*.tar.gz | head -20
+      - name: Check package
+        run: |
+          pip install twine
+          twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi  # requires approval + OIDC publisher; change to no env if you prefer auto
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Uses OIDC — add trusted publisher at
+          # https://pypi.org/manage/account/publishing/ for saforem2/ai-agent-arcade
+          # (owner saforem2, repo ai-agent-arcade, workflow publish.yml, env pypi)
+          # Fallback: set PYPI_API_TOKEN repo secret and uncomment:
+          # password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
+
