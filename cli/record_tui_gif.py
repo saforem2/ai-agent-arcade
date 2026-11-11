@@ -71,17 +71,40 @@ async def record(match: Path, out: Path, scratch: Path, frames: int, fps: int, s
             svg_to_png(svg, png, width)
             images.append(png)
 
-    first, *rest = [Image.open(p).convert("RGB") for p in images]
+    # Pillow's GIF encoder merges consecutive identical frames into one with
+    # a doubled duration (80 inputs -> 75 stored when idle frames are static).
+    # That preserves wall-clock time but breaks "80 frames at 10fps" framing.
+    # Coalesce ourselves so the reported count is honest and the durations
+    # survive a round-trip. The field's drift (WAVE_AMP=0.5 @ 30s period) is
+    # intentionally sub-threshold at 10fps, so some idle pairs really are
+    # byte-identical — coalescing is the faithful representation.
+    import hashlib
+
+    loaded = [Image.open(p).convert("RGB") for p in images]
+    hashes = [hashlib.md5(im.tobytes()).hexdigest() for im in loaded]
+    coalesced: list[Image.Image] = []
+    durations: list[int] = []
+    base = int(1000 / fps)
+    for idx, im in enumerate(loaded):
+        if idx > 0 and hashes[idx] == hashes[idx - 1]:
+            durations[-1] += base
+        else:
+            coalesced.append(im)
+            durations.append(base)
+    if len(coalesced) < len(loaded):
+        print(f"note: {len(loaded) - len(coalesced)} consecutive identical frames coalesced "
+              f"({len(loaded)} logical -> {len(coalesced)} stored, total {sum(durations)}ms)")
+    first, *rest = coalesced
     out.parent.mkdir(parents=True, exist_ok=True)
     first.save(
         out,
         save_all=True,
         append_images=rest,
-        duration=int(1000 / fps),
+        duration=durations,
         loop=0,
         optimize=True,
     )
-    return out, len(images)
+    return out, len(coalesced), len(loaded)
 
 
 def main() -> None:
@@ -97,7 +120,7 @@ def main() -> None:
     parser.add_argument("--theme", type=str, default=None, choices=["ansi-dark", "ansi-light", "pbs-dark", "pbs-light"], help="Textual theme (default: auto-detect from terminal)")
     args = parser.parse_args()
 
-    out, count = asyncio.run(
+    out, stored, logical = asyncio.run(
         record(
             args.match.resolve(),
             args.output.resolve(),
@@ -109,7 +132,8 @@ def main() -> None:
             args.theme,
         )
     )
-    print(f"wrote {out} ({count} frames at {args.fps}fps)")
+    tag = f"{logical} logical/{stored} stored" if stored != logical else f"{stored}"
+    print(f"wrote {out} ({tag} frames at {args.fps}fps)")
 
 
 if __name__ == "__main__":
