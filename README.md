@@ -25,7 +25,14 @@ uv run --with pillow python cli/record_tui_gif.py games/chess/match-171 --theme 
 Requirements: Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and an ALCF
 account with inference access.
 
-The package is **not on PyPI**. Run it from the repository:
+Available on [TestPyPI](https://test.pypi.org/project/ai-agent-arcade/):
+
+```bash
+uvx --index https://test.pypi.org/simple/ --index-strategy unsafe-best-match --with ai-agent-arcade ai-agent-arcade --games 20
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ ai-agent-arcade
+```
+
+Or directly from the repository:
 
 ```bash
 uvx --from git+https://github.com/saforem2/ai-agent-arcade ai-agent-arcade --games 20

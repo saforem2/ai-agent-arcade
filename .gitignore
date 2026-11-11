@@ -36,3 +36,4 @@ games/chess/match-*/
 !games/chess/match-171/
 !games/chess/match-009/**
 !games/chess/match-171/**
+dist/
