@@ -40,21 +40,20 @@ Or from a checkout:
 ```bash
 git clone https://github.com/saforem2/ai-agent-arcade.git
 cd ai-agent-arcade
-uv run ai-agent-arcade --games 20
+uv run ai-agent-arcade --games 20  # from checkout; installed users prefer uvx
 ```
 
-Both commands work without Herdr, tmux, or a local inference gateway.
-Pressing `Ctrl-C` stops the runner cleanly. Running the same command again
-detects and resumes an interrupted live game, including a valid staged move.
-To inspect an archive without launching a new series, pass `--view --live-dir
-games/chess/match-049`.
+`uvx` (or `pipx`/`pip install ai-agent-arcade` then `ai-agent-arcade`) works without
+Herdr, tmux, or a local inference gateway. `Ctrl-C` stops cleanly. Running the same
+command again resumes an interrupted live game, including a valid staged move.
+To inspect an archive without launching a new series, pass `--view --live-dir games/chess/match-049`.
 
 ### Reset a game
 
 To throw away an interrupted game and start from the opening position:
 
 ```bash
-uv run ai-agent-arcade --reset --games 20
+uvx ai-agent-arcade --reset --games 20
 ```
 
 Press `R` in the running app to do the same thing without restarting it.
@@ -94,14 +93,14 @@ model = "model-b"
 ```
 
 ```bash
-uv run ai-agent-arcade --config matchup.toml --games 10
+uvx ai-agent-arcade --config matchup.toml --games 10
 ```
 
 Override every player's reasoning effort for one run without editing the
 file (passed through as `reasoning_effort`):
 
 ```bash
-uv run ai-agent-arcade --config matchup.toml --games 10 --effort medium
+uvx ai-agent-arcade --config matchup.toml --games 10 --effort medium
 ```
 
 `base_url` may be an API root ending in `/v1` or the complete
@@ -187,7 +186,7 @@ braille density and the field drifts between two frames.
 </p>
 
 ```bash
-uv run ai-agent-arcade --games 20 --board-style compact
+uvx ai-agent-arcade --games 20 --board-style compact
 ```
 
 ### Decision history
@@ -212,8 +211,8 @@ automatically: `COLORFGBG` first, then a direct OSC 11 query to the terminal,
 then dark. Override once with `--theme` or persistently with `ARCADE_THEME`:
 
 ```bash
-uv run ai-agent-arcade --games 20 --theme ansi-light
-ARCADE_THEME=pbs-dark uv run ai-agent-arcade --games 20
+uvx ai-agent-arcade --games 20 --theme ansi-light
+ARCADE_THEME=pbs-dark uvx ai-agent-arcade --games 20
 ```
 
 `Ctrl-P` still switches themes at runtime, and the board repaints with it.
