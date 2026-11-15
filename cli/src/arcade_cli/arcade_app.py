@@ -597,6 +597,9 @@ class ArcadeApp(App):
             self.notify(f"Abandoned index {candidate} outside 1..{self.games}", severity="warning")
             return
         self.stop_runner()
+        # Keep series-summary.json so the tally survives the retry — the
+        # runner rebuilds from it. RESET_UNLINK no longer includes it for
+        # the same reason.
         for name in series.RESET_TRUNCATE:
             path = self.live / name
             if path.exists():

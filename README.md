@@ -43,10 +43,11 @@ cd ai-agent-arcade
 uv run ai-agent-arcade --games 20  # from checkout; installed users prefer uvx
 ```
 
-`uvx` (or `pipx`/`pip install ai-agent-arcade` then `ai-agent-arcade`) works without
-Herdr, tmux, or a local inference gateway. `Ctrl-C` stops cleanly. Running the same
-command again resumes an interrupted live game, including a valid staged move.
-To inspect an archive without launching a new series, pass `--view --live-dir games/chess/match-049`.
+`uvx ai-agent-arcade` is the TUI entry point (the package also installs `arcade`,
+`uvx arcade`, for the match-manager CLI). No Herdr, tmux, or local inference gateway
+needed — `Ctrl-C` stops cleanly and re-running resumes the live game, including a
+staged move. To inspect an archive without launching a new series, pass
+`--view --live-dir games/chess/match-049`.
 
 ### Reset a game
 

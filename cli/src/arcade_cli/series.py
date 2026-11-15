@@ -590,11 +590,61 @@ def existing_series_rows(before_match):
     return rows
 
 
+def existing_pairing_rows(players):
+    """All complete rows whose seats match *players* (order-insensitive).
+
+    ``existing_series_rows`` is match-number-gated; this one is pairing-gated
+    so a fresh ``--games 20`` for an already-seen pairing still shows its
+    all-time tally instead of "No games complete yet".
+    """
+    wanted = {player["name"] for player in players}
+    rows = []
+    for path in sorted((ROOT / "games/chess").glob("match-*/match.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("status") != "complete":
+            continue
+        result = data.get("result") or ""
+        if len(result.split()) != 3:
+            continue
+        seats = data.get("seats") or {}
+        names = {
+            (seats.get("white") or {}).get("name"),
+            (seats.get("black") or {}).get("name"),
+        }
+        if names == wanted:
+            rows.append((data["match"], result))
+    return rows
+
+
+def _load_persisted_summary(path, players=None):
+    """Return a validated ``series-summary.json``-shaped dict, re-deriving
+    ``standings`` when absent. ``None`` when missing or invalid."""
+    try:
+        raw = Path(path).read_text()
+    except OSError:
+        return None
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("matches"), list):
+        return None
+    if players is not None and "standings" not in data:
+        try:
+            data["standings"] = standings_line(data, players)
+        except Exception:
+            pass
+    return data
+
+
 RESET_TRUNCATE = (
     "moves.txt", "fen.txt", "decision_log.jsonl", "banner.txt", "result.txt",
     "white-model.log", "black-model.log", "series-runner.log", "stage_log.txt",
 )
-RESET_UNLINK = ("pending.txt", "series-summary.json", "thinking.txt")
+RESET_UNLINK = ("pending.txt", "thinking.txt")
 RESET_PRESERVE = ("moves.txt", "decision_log.jsonl", "names.txt", "series-runner.log", "fen.txt")
 
 
@@ -729,9 +779,30 @@ def run_series():
         print(f"reset: abandoned transcript kept at {saved}" if saved else "reset: live directory was already clean")
     if args.start_index < 1 or args.start_index > args.games:
         raise SystemExit("--start-index must be between 1 and --games")
+    if args.start_index < 1 or args.start_index > args.games:
+        raise SystemExit("--start-index must be between 1 and --games")
     if args.start_index == 1 and not args.resume_live:
-        series_log.write_text("")
-        completed = []
+        # Same pairing + persisted summary -> keep the counter running instead
+        # of resetting to 0. Different pairing -> fresh start.
+        persisted = _load_persisted_summary(summary, players)
+        if persisted is not None:
+            persisted_names = set()
+            for row in persisted.get("matches") or []:
+                parts = (row.get("result") or "").split()
+                if len(parts) == 3:
+                    persisted_names.add(parts[0])
+                    persisted_names.add(parts[2])
+            wanted_names = {player["name"] for player in players}
+            if not persisted.get("matches") or persisted_names == wanted_names:
+                completed = [(row["match"], row["result"]) for row in persisted["matches"]]
+                series_log.write_text("")
+                append(series_log, f"CONTINUING {wanted_names} at {len(completed)} complete (from {summary.name})")
+            else:
+                series_log.write_text("")
+                completed = []
+        else:
+            series_log.write_text("")
+            completed = []
     else:
         completed = existing_series_rows(next_match_number() - args.start_index + 1)
         append(series_log, f"RESUME at game {args.start_index}/{args.games}")
