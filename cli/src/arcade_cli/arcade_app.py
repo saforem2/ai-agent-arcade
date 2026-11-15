@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import importlib.util
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -580,13 +581,19 @@ class ArcadeApp(App):
 
     def action_retry_abandoned(self) -> None:
         """Retry the last abandoned series game: re-run that index with
-        the same seat order, then continue the remaining games."""
+        the same seat order, then continue the remaining games.
+
+        ``candidate`` is the series counter N from ``GAME N/M … ABANDONED``
+        in ``series-runner.log``. With persistent tally a fresh ``--games M``
+        for the same pairing logs ``CONTINUING at K`` then ``GAME 1/M…``; N is
+        still the correct ``--start-index`` for that run because the runner
+        re-seeds ``completed`` from ``series-summary.json`` at length K.
+        """
         log = self.live / "series-runner.log"
         text = read_text(log, "")
-        import re as _re
         candidate = None
         for line in reversed(text.splitlines()):
-            m = _re.search(r"GAME\s+(\d+)/\d+\s+match-\d+.*?ABANDONED", line)
+            m = re.search(r"GAME\s+(\d+)/\d+\s+match-\d+.*?ABANDONED", line)
             if m:
                 candidate = int(m.group(1))
                 break
