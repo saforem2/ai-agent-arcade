@@ -519,7 +519,7 @@ def current_live_match(white, black, live=None):
     return max(matches, key=lambda item: item["match"]) if matches else None
 
 
-def write_summary(path, rows, games_requested, players=None):
+def write_summary(path, rows, games_requested, players=None, failures=0):
     players = players or [PLAYERS["gpt-oss"], PLAYERS["inkling"]]
     wins = {player["name"]: 0 for player in players}
     draws = 0
@@ -536,11 +536,11 @@ def write_summary(path, rows, games_requested, players=None):
         "games_complete": len(rows),
         "wins": wins,
         "draws": draws,
+        "abandoned": failures,
         "matches": [{"match": number, "result": result} for number, result in rows],
     }
     payload["standings"] = standings_line(payload, players)
     path.write_text(json.dumps(payload, indent=2) + "\n")
-
 
 def standings_line(summary, players=None):
     """One-line celebration of a finished (or in-progress) series.
@@ -766,7 +766,8 @@ def run_series():
             wanted_names = {player["name"] for player in players}
             if not persisted.get("matches") or persisted_names == wanted_names:
                 completed = [(row["match"], row["result"]) for row in persisted["matches"]]
-                series_log.write_text("")
+                if series_log.exists() and series_log.read_text().strip():
+                    append(series_log, "---")
                 append(series_log, f"CONTINUING {wanted_names} at {len(completed)} complete (from {summary.name})")
             else:
                 series_log.write_text("")
@@ -788,12 +789,7 @@ def run_series():
             white, black = players[1], players[0]
         try:
             completed.append(play_one(
-                live_dir,
-                game_index,
-                args.games,
-                white,
-                black,
-                series_log,
+                live_dir, game_index, args.games, white, black, series_log,
                 resume_live=resume_live,
             ))
         except GameFailed as exc:
@@ -816,11 +812,11 @@ def run_series():
             if saved:
                 append(series_log, f"  abandoned transcript kept at {saved}")
             # Don't count this game as completed; write summary from real results.
-            write_summary(summary, completed, args.games, players)
+            write_summary(summary, completed, args.games, players, failures=failures)
             resume_live = False
             continue
         resume_live = False
-        write_summary(summary, completed, args.games, players)
+        write_summary(summary, completed, args.games, players, failures=failures)
     if failures:
         append(series_log, f"SERIES COMPLETE: {args.games} games ({failures} abandoned after retries)")
     else:

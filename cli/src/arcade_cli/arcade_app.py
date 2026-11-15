@@ -130,10 +130,11 @@ def decision_markup(rows: list[dict], dark: bool = True) -> str:
 def score_line(live: Path, white: str, black: str, summary: dict | None = None) -> str:
     if summary and summary.get("games_complete") is not None:
         wins = summary.get("wins") or {}
-        return (
-            f"{wins.get(white, 0)}–{wins.get(black, 0)} · "
-            f"{summary.get('draws', 0)} draws · {summary['games_complete']} complete"
-        )
+        base = f"{wins.get(white, 0)}–{wins.get(black, 0)} · {summary.get('draws', 0)} draws · {summary['games_complete']} complete"
+        abandoned = summary.get("abandoned", 0) or summary.get("failures", 0)
+        if abandoned:
+            base += f" · {abandoned} abandoned"
+        return base
     rows = arcade.parse_results(read_text(live / "results.txt"))
     wins_white, wins_black, draws, games = arcade.head_to_head(rows, white, black)
     return f"{wins_white}–{wins_black} · {draws} draws · {games} complete"
