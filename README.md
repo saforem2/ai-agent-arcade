@@ -27,28 +27,29 @@ Requirements: Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and an ALCF
 account with inference access.
 
 ```bash
-pip install ai-agent-arcade
 uvx ai-agent-arcade --games 20
 ```
 
-Or from a specific source:
+No install, no venv — `uvx` fetches the published package and runs it in an
+ephemeral environment. `Ctrl-C` stops cleanly and re-running resumes the live
+game, including a staged move. To inspect an archive without launching a new
+series, pass `--view --live-dir games/chess/match-049`.
+
+Pin to a specific source:
 
 ```bash
 uvx --from git+https://github.com/saforem2/ai-agent-arcade ai-agent-arcade --games 20
 ```
-Or from a checkout:
+From a checkout (contributors):
 
 ```bash
 git clone https://github.com/saforem2/ai-agent-arcade.git
 cd ai-agent-arcade
-uv run ai-agent-arcade --games 20  # from checkout; installed users prefer uvx
+uv run ai-agent-arcade --games 20
 ```
 
-`uvx ai-agent-arcade` is the TUI entry point (the package also installs `arcade`,
-`uvx arcade`, for the match-manager CLI). No Herdr, tmux, or local inference gateway
-needed — `Ctrl-C` stops cleanly and re-running resumes the live game, including a
-staged move. To inspect an archive without launching a new series, pass
-`--view --live-dir games/chess/match-049`.
+The TUI entry point is `ai-agent-arcade` (alias: `arcade`); both names work
+as `uvx ai-agent-arcade` and `uvx arcade`.
 
 ### Reset a game
 
@@ -65,11 +66,12 @@ FEN, runner log) is copied to `<live-dir>/abandoned/<timestamp>/` with a
 `reason.txt` first, and completed archives under `games/` are untouched. The
 orphaned match record is flipped from `live` to `abandoned` so the next game
 is not blocked by `match-NNN is still live`. The headless runner takes the
-same flag:
+The headless runner takes the same flag:
 
 ```bash
-uv run python -m arcade_cli.series --reset --games 20 --live-dir "$ARCADE_LIVE"
+uvx ai-agent-arcade-series --reset --games 20 --live-dir "$ARCADE_LIVE"
 ```
+
 
 ### Configure another matchup
 
@@ -284,17 +286,22 @@ Colors alternate every game across the series.
 
 ```bash
 export ARCADE_LIVE=/tmp/alcf-chess-20
-uv run python -m arcade_cli.series --games 20 --live-dir "$ARCADE_LIVE"
+uvx ai-agent-arcade-series --games 20 --live-dir "$ARCADE_LIVE"
 ```
 
 Resume after a completed game:
 
 ```bash
-uv run python -m arcade_cli.series \
+uvx ai-agent-arcade-series \
   --games 20 \
   --start-index 12 \
   --live-dir "$ARCADE_LIVE"
 ```
+
+Add a matchup the same way as the TUI: `uvx ai-agent-arcade-series --config muse-inkling2 --games 20`
+(or any path/TOML name). Checkout alternative: `uv run python -m arcade_cli.series --games 20 --live-dir "$ARCADE_LIVE"`.
+
+
 
 The runner writes:
 
