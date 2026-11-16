@@ -542,7 +542,7 @@ def strip_terminal_controls(ansi):
 
 
 def render(board, fly=None, status_extra='', *, terminal_size=None, now=None,
-           output=True, names_override=None, interactive=None):
+           output=True, names_override=None, interactive=None, embedded=False):
     global _btn_bounds
     t = time.monotonic() if now is None else now
     if names_override is None:
@@ -581,9 +581,21 @@ def render(board, fly=None, status_extra='', *, terminal_size=None, now=None,
             show_ban = False
         else:
             show_head = False
-    def line(s):
-        return bg(PANEL) + LP + s + bg(PANEL) + '\x1b[K' + R + '\n'
-
+    if embedded:
+        # Inside the Textual TUI the widget sits in #board-wrap, whose
+        # background is the theme's $background — warm #1C1C1C for
+        # ansi-dark, cool #0B1220 for pbs-dark. Painting gutters with the
+        # renderer's PANEL (#12151c, cool near-black) makes the left pane
+        # read as a mismatched dark slab against the warm side panels
+        # (the "weird dark blue behind board" bug). Transparent gutters let
+        # Textual's own background show instead, so the whole page feels
+        # like one sheet with the board as its centrepiece — same as the
+        # light theme already does, where PANEL happens to equal $background.
+        def line(s):
+            return LP + s + '\x1b[K' + R + '\n'
+    else:
+        def line(s):
+            return bg(PANEL) + LP + s + bg(PANEL) + '\x1b[K' + R + '\n'
     idle = 0.0
     if not board.is_game_over():
         gap = t - last_move_t - IDLE_AFTER
@@ -684,10 +696,16 @@ def render(board, fly=None, status_extra='', *, terminal_size=None, now=None,
     wl = board.turn == chess.WHITE and not over
     bl = board.turn == chess.BLACK and not over
     if show_head:
-        out.append(line('  ' + fg(W_GLYPH if wl else blend(W_GLYPH, PANEL, 0.6))
-                        + ('▸ ' if wl else '  ') + f'\x1b[1m{display_names["w"]}\x1b[22m' + R + bg(PANEL)
-                        + fg(TDIM) + '  ' + fg(B_GLYPH if bl else blend(B_GLYPH, PANEL, 0.6))
-                        + ('▸ ' if bl else '  ') + f'\x1b[1m{display_names["b"]}\x1b[22m'))
+        if embedded:
+            out.append(line('  ' + fg(W_GLYPH if wl else blend(W_GLYPH, PANEL, 0.6))
+                            + ('▸ ' if wl else '  ') + f'\x1b[1m{display_names["w"]}\x1b[22m' + R
+                            + fg(TDIM) + '  ' + fg(B_GLYPH if bl else blend(B_GLYPH, PANEL, 0.6))
+                            + ('▸ ' if bl else '  ') + f'\x1b[1m{display_names["b"]}\x1b[22m'))
+        else:
+            out.append(line('  ' + fg(W_GLYPH if wl else blend(W_GLYPH, PANEL, 0.6))
+                            + ('▸ ' if wl else '  ') + f'\x1b[1m{display_names["w"]}\x1b[22m' + R + bg(PANEL)
+                            + fg(TDIM) + '  ' + fg(B_GLYPH if bl else blend(B_GLYPH, PANEL, 0.6))
+                            + ('▸ ' if bl else '  ') + f'\x1b[1m{display_names["b"]}\x1b[22m'))
     if show_spark:
         hist = material_history(move_list)
         d = hist[-1] if hist else 0
@@ -747,13 +765,15 @@ def render(board, fly=None, status_extra='', *, terminal_size=None, now=None,
     if show_ban:
         ban = read_cached(BANNER)
         out.append(line(f'   {fg(FOOT)}{ban[:boardw - 4]}' if ban else ''))
-    out.append(bg(PANEL) + '\x1b[J' + R)
+    if not embedded:
+        out.append(bg(PANEL) + '\x1b[J' + R)
+    else:
+        out.append('\x1b[J' + R)
     frame = ''.join(out)
     if output:
         sys.stdout.write(frame)
         sys.stdout.flush()
     return frame
-
 def draw_piece(g, pc, x0, y0, idle, t, checked=False, topple=False):
     """Both sides are SOLID dot sprites — the same braille figures, filled right
     out, told apart by colour alone: saturated ember vs pure bright white.

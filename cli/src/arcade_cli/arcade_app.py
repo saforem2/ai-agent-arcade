@@ -40,7 +40,7 @@ def original_board_frame(renderer, board, moves, white, black, cols, rows, now=N
     renderer.move_list = list(moves)
     ansi = renderer.render(
         board, fly=fly, terminal_size=(cols, rows), now=now, output=False,
-        names_override=(white, black), interactive=False,
+        names_override=(white, black), interactive=False, embedded=True,
     )
     return renderer.strip_terminal_controls(ansi)
 

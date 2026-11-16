@@ -186,10 +186,9 @@ async def test_virtual_clock_drives_replay_deterministically():
 @pytest.mark.asyncio
 async def test_replay_reveals_match_and_decisions_progressively():
     """A replay must rewind the sidebar too, not sit on the archive's final state."""
-    match = Path(__file__).resolve().parents[2] / "games/chess/match-035"
+    match = Path(__file__).resolve().parents[2] / "games/chess/match-171"
     app = ArcadeApp(match, 1, 1, True, run_matches=False)
     async with app.run_test(size=(150, 46)) as pilot:
-        await pilot.pause()
         app.refresh_state()
         await pilot.pause()
 
