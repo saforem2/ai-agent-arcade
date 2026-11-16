@@ -7,18 +7,19 @@ an inspectable archive.
 
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/arcade-tui-dark.gif">
-  <img src="docs/assets/arcade-tui-light.gif" alt="AI Agent Arcade Textual app replaying a verified match: animated dot-field board, match panel, scrollable decisions, and series log" width="900">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/alcf-chess-replay.gif">
+  <img src="docs/assets/alcf-chess-replay-light.gif" alt="MISTRAL-LARGE-4-NVFP4 vs MUSE-SPARK-BF16 (match-171, 80 plies: Fried Liver → queen sac → promotion → Qe5#) — dot-field board rendered from the archived transcript">
 </picture>
 </p>
 
-The recording above is the real Textual app replaying archived `match-171` (`MISTRAL-LARGE-4-NVFP4 0-1 MUSE-SPARK-BF16`, 80 plies: Fried Liver \u2192 queen sac \u2192 pawn promotion \u2192 `Qe5#`), captured frame-by-frame through Textual's own `App.export_screenshot()`.
-Regenerate it with:
+The replay above is the canonical dot-field renderer (`engine/tui_dots.py`) driven directly from `games/chess/match-171` — braille density, amber/blue piece tints, and influence shading preserved at full resolution (no terminal screengrab):
 
 ```bash
-uv run --with pillow python cli/record_tui_gif.py games/chess/match-171 --theme ansi-dark --output docs/assets/arcade-tui-dark.gif --frames 80 --fps 10 --width 900
-uv run --with pillow python cli/record_tui_gif.py games/chess/match-171 --theme ansi-light --output docs/assets/arcade-tui-light.gif --frames 80 --fps 10 --width 900
+uv run --with pillow python cli/render_readme_media.py games/chess/match-171
+uv run --with pillow python cli/render_readme_media.py games/chess/match-171 --palette light --suffix "-light"
 ```
+
+The live Textual app recording (panels, scrollable decisions, series log) lives in [Replays and media](#replays-and-media) below.
 
 ## Install and run
 
@@ -26,16 +27,20 @@ Requirements: Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and an ALCF
 account with inference access.
 
 ```bash
-pip install ai-agent-arcade
 uvx ai-agent-arcade --games 20
 ```
 
-Or from a specific source:
+No install, no venv — `uvx` fetches the published package and runs it in an
+ephemeral environment. `Ctrl-C` stops cleanly and re-running resumes the live
+game, including a staged move. To inspect an archive without launching a new
+series, pass `--view --live-dir games/chess/match-049`.
+
+Pin to a specific source:
 
 ```bash
 uvx --from git+https://github.com/saforem2/ai-agent-arcade ai-agent-arcade --games 20
 ```
-Or from a checkout:
+From a checkout (contributors):
 
 ```bash
 git clone https://github.com/saforem2/ai-agent-arcade.git
@@ -43,18 +48,15 @@ cd ai-agent-arcade
 uv run ai-agent-arcade --games 20
 ```
 
-Both commands work without Herdr, tmux, or a local inference gateway.
-Pressing `Ctrl-C` stops the runner cleanly. Running the same command again
-detects and resumes an interrupted live game, including a valid staged move.
-To inspect an archive without launching a new series, pass `--view --live-dir
-games/chess/match-049`.
+The TUI entry point is `ai-agent-arcade` (alias: `arcade`); both names work
+as `uvx ai-agent-arcade` and `uvx arcade`.
 
 ### Reset a game
 
 To throw away an interrupted game and start from the opening position:
 
 ```bash
-uv run ai-agent-arcade --reset --games 20
+uvx ai-agent-arcade --reset --games 20
 ```
 
 Press `R` in the running app to do the same thing without restarting it.
@@ -64,13 +66,37 @@ FEN, runner log) is copied to `<live-dir>/abandoned/<timestamp>/` with a
 `reason.txt` first, and completed archives under `games/` are untouched. The
 orphaned match record is flipped from `live` to `abandoned` so the next game
 is not blocked by `match-NNN is still live`. The headless runner takes the
-same flag:
+The headless runner takes the same flag:
 
 ```bash
-uv run python -m arcade_cli.series --reset --games 20 --live-dir "$ARCADE_LIVE"
+uvx ai-agent-arcade-series --reset --games 20 --live-dir "$ARCADE_LIVE"
 ```
 
+
 ### Configure another matchup
+
+#### Bundled presets
+
+This repo ships a few curated pairings under `configs/` (and inside the
+installed wheel, so they work via `uvx --from` with no checkout):
+
+| preset | one | two |
+|---|---|---|
+| `muse` | `inkling-bf16` | `muse-spark-bf16` |
+| `muse-mistral` | `mistral-large-4-nvfp4` | `muse-spark-bf16` |
+| `muse-inkling2` | `inkling-2-small` | `muse-spark-bf16` |
+
+```bash
+uvx ai-agent-arcade --config muse-inkling2 --games 20
+uvx ai-agent-arcade --list-configs   # show available presets
+```
+
+`--config` accepts a preset name (with or without `.toml`), a repo-relative
+path like `configs/muse-inkling2.toml`, or any absolute/relative file path.
+The headless runner has the same flags: `uvx ai-agent-arcade-series --config
+muse --games 20` and `--list-configs`.
+
+#### Custom matchup
 
 Pass a versioned TOML file to use any two OpenAI-compatible endpoints:
 
@@ -94,14 +120,14 @@ model = "model-b"
 ```
 
 ```bash
-uv run ai-agent-arcade --config matchup.toml --games 10
+uvx ai-agent-arcade --config matchup.toml --games 10
 ```
 
 Override every player's reasoning effort for one run without editing the
 file (passed through as `reasoning_effort`):
 
 ```bash
-uv run ai-agent-arcade --config matchup.toml --games 10 --effort medium
+uvx ai-agent-arcade --config matchup.toml --games 10 --effort medium
 ```
 
 `base_url` may be an API root ending in `/v1` or the complete
@@ -187,7 +213,7 @@ braille density and the field drifts between two frames.
 </p>
 
 ```bash
-uv run ai-agent-arcade --games 20 --board-style compact
+uvx ai-agent-arcade --games 20 --board-style compact
 ```
 
 ### Decision history
@@ -212,8 +238,8 @@ automatically: `COLORFGBG` first, then a direct OSC 11 query to the terminal,
 then dark. Override once with `--theme` or persistently with `ARCADE_THEME`:
 
 ```bash
-uv run ai-agent-arcade --games 20 --theme ansi-light
-ARCADE_THEME=pbs-dark uv run ai-agent-arcade --games 20
+uvx ai-agent-arcade --games 20 --theme ansi-light
+ARCADE_THEME=pbs-dark uvx ai-agent-arcade --games 20
 ```
 
 `Ctrl-P` still switches themes at runtime, and the board repaints with it.
@@ -260,17 +286,22 @@ Colors alternate every game across the series.
 
 ```bash
 export ARCADE_LIVE=/tmp/alcf-chess-20
-uv run python -m arcade_cli.series --games 20 --live-dir "$ARCADE_LIVE"
+uvx ai-agent-arcade-series --games 20 --live-dir "$ARCADE_LIVE"
 ```
 
 Resume after a completed game:
 
 ```bash
-uv run python -m arcade_cli.series \
+uvx ai-agent-arcade-series \
   --games 20 \
   --start-index 12 \
   --live-dir "$ARCADE_LIVE"
 ```
+
+Add a matchup the same way as the TUI: `uvx ai-agent-arcade-series --config muse-inkling2 --games 20`
+(or any path/TOML name). Checkout alternative: `uv run python -m arcade_cli.series --games 20 --live-dir "$ARCADE_LIVE"`.
+
+
 
 The runner writes:
 
@@ -312,21 +343,28 @@ claimable threefold and 50-move draws.
 
 ## Replays and media
 
-The GIF and stills are recomputed from an archived transcript, not screen-
-recorded.
+The stills and GIFs below are recomputed from archived transcripts via the canonical renderers — no screengrab.
 
-<p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/alcf-chess-replay.gif">
-  <img src="docs/assets/alcf-chess-replay-light.gif" alt="Animated replay of MISTRAL-LARGE-4-NVFP4 vs MUSE-SPARK-BF16 (match-171, 80 plies: Fried Liver \u2192 Qe5#)" width="520">
-</picture>
-</p>
+**Dot-field board** — the hero art at the top of this README (match-171, full 80-ply run):
 
 ```bash
 uv run --with pillow python cli/render_readme_media.py games/chess/match-171
 uv run --with pillow python cli/render_readme_media.py games/chess/match-171 --palette light --suffix "-light"
 ```
 
+**Live Textual app** — the board embedded in panels with scrollable decisions and the series log, captured via `App.export_screenshot()`:
+
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/arcade-tui-dark.gif">
+  <img src="docs/assets/arcade-tui-light.gif" alt="AI Agent Arcade Textual app — board in the left pane, match panel and scrollable decisions on the right">
+</picture>
+</p>
+
+```bash
+uv run --with pillow python cli/record_tui_gif.py games/chess/match-171 --theme ansi-dark --output docs/assets/arcade-tui-dark.gif --frames 80 --fps 10 --width 900
+uv run --with pillow python cli/record_tui_gif.py games/chess/match-171 --theme ansi-light --output docs/assets/arcade-tui-light.gif --frames 80 --fps 10 --width 900
+```
 ## Tests
 
 ```bash

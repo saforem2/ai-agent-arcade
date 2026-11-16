@@ -35,6 +35,7 @@ packages = ["cli/src/arcade_cli"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "engine" = "arcade_cli/_engine"
+"configs" = "arcade_cli/configs"
 
 [tool.pytest.ini_options]
 testpaths = ["cli/tests"]

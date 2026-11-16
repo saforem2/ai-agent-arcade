@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import importlib.util
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -39,7 +40,7 @@ def original_board_frame(renderer, board, moves, white, black, cols, rows, now=N
     renderer.move_list = list(moves)
     ansi = renderer.render(
         board, fly=fly, terminal_size=(cols, rows), now=now, output=False,
-        names_override=(white, black), interactive=False,
+        names_override=(white, black), interactive=False, embedded=True,
     )
     return renderer.strip_terminal_controls(ansi)
 
@@ -129,10 +130,11 @@ def decision_markup(rows: list[dict], dark: bool = True) -> str:
 def score_line(live: Path, white: str, black: str, summary: dict | None = None) -> str:
     if summary and summary.get("games_complete") is not None:
         wins = summary.get("wins") or {}
-        return (
-            f"{wins.get(white, 0)}–{wins.get(black, 0)} · "
-            f"{summary.get('draws', 0)} draws · {summary['games_complete']} complete"
-        )
+        base = f"{wins.get(white, 0)}–{wins.get(black, 0)} · {summary.get('draws', 0)} draws · {summary['games_complete']} complete"
+        abandoned = summary.get("abandoned", 0) or summary.get("failures", 0)
+        if abandoned:
+            base += f" · {abandoned} abandoned"
+        return base
     rows = arcade.parse_results(read_text(live / "results.txt"))
     wins_white, wins_black, draws, games = arcade.head_to_head(rows, white, black)
     return f"{wins_white}–{wins_black} · {draws} draws · {games} complete"
@@ -431,6 +433,7 @@ class ArcadeApp(App):
         ("b", "toggle_board", "Board style"),
         ("r", "replay", "Replay"),
         ("R", "reset", "Reset game"),
+        ("y", "retry_abandoned", "Retry abandoned"),
         ("j", "decision_down", "Decision down"),
         ("k", "decision_up", "Decision up"),
         ("g", "decision_newest", "Latest decision"),
@@ -577,6 +580,58 @@ class ArcadeApp(App):
             f"Reset — abandoned game saved to {saved.name}" if saved else "Reset — no game in progress"
         )
 
+    def action_retry_abandoned(self) -> None:
+        """Retry the last abandoned series game: re-run that index with
+        the same seat order, then continue the remaining games.
+
+        ``candidate`` is the series counter N from ``GAME N/M … ABANDONED``
+        in ``series-runner.log``. With persistent tally a fresh ``--games M``
+        for the same pairing logs ``CONTINUING at K`` then ``GAME 1/M…``; N is
+        still the correct ``--start-index`` for that run because the runner
+        re-seeds ``completed`` from ``series-summary.json`` at length K.
+        """
+        log = self.live / "series-runner.log"
+        text = read_text(log, "")
+        candidate = None
+        for line in reversed(text.splitlines()):
+            m = re.search(r"GAME\s+(\d+)/\d+\s+match-\d+.*?ABANDONED", line)
+            if m:
+                candidate = int(m.group(1))
+                break
+        if candidate is None:
+            self.notify("No abandoned game to retry in series-runner.log", severity="warning")
+            return
+        if not 1 <= candidate <= self.games:
+            self.notify(f"Abandoned index {candidate} outside 1..{self.games}", severity="warning")
+            return
+        self.stop_runner()
+        # Keep series-summary.json so the tally survives the retry — the
+        # runner rebuilds from it. RESET_UNLINK no longer includes it for
+        # the same reason.
+        for name in series.RESET_TRUNCATE:
+            path = self.live / name
+            if path.exists():
+                path.write_text("")
+        for name in series.RESET_UNLINK:
+            (self.live / name).unlink(missing_ok=True)
+        for stale in self.live.glob("pending.stale.*.txt"):
+            stale.unlink(missing_ok=True)
+        self.replaying = False
+        self.last_decision_count = -1
+        self.last_event_size = 0
+        self.runner_error = ""
+        self.runner_error_rendered = False
+        board = self.query_one("#board", BrailleBoard)
+        board.replay_moves = []
+        board.replay_index = 0
+        board.fly_animation = None
+        board.update_position(chess.Board(), board.white, board.black, [])
+        if self.run_matches:
+            self.start_index = candidate
+            self.resume_live = False
+            self.start_runner()
+        self.notify(f"Retry — restarting Game {candidate}/{self.games} from the opening")
+
     def start_replay(self) -> None:
         """Rewind the whole view -- board, match panel and decisions -- to ply 0.
 
@@ -680,6 +735,25 @@ class ArcadeApp(App):
                 self.runner_error_rendered = True
             self.last_event_size = size
 
+def bundled_configs() -> list[Path]:
+    out: list[Path] = []
+    try:
+        from importlib.resources import as_file, files
+        pkg = files("arcade_cli").joinpath("configs")
+        with as_file(pkg) as d:
+            if d.is_dir():
+                out.extend(sorted(d.glob("*.toml")))
+                if out:
+                    return out
+    except Exception:
+        pass
+    for base in (series.ROOT / "configs", Path.cwd() / "configs"):
+        if base.is_dir():
+            found = sorted(base.glob("*.toml"))
+            if found:
+                return found
+    return out
+
 
 def main() -> None:
     import argparse
@@ -689,7 +763,11 @@ def main() -> None:
     parser.add_argument("--start-index", type=int, default=1)
     parser.add_argument("--resume-live", action="store_true")
     parser.add_argument("--live-dir", type=Path, default=DEFAULT_LIVE)
-    parser.add_argument("--config", type=Path, help="TOML matchup configuration")
+    parser.add_argument("--config", type=Path,
+                        help="TOML matchup file — path, or a bundled preset name "
+                             "(e.g. muse, muse-mistral, muse-inkling2; .toml optional)")
+    parser.add_argument("--list-configs", action="store_true",
+                        help="list bundled matchup presets and exit")
     parser.add_argument("--view", action="store_true", help="view an existing live directory without starting models")
     parser.add_argument(
         "--reset",
@@ -716,6 +794,10 @@ def main() -> None:
              "(e.g. low, medium, high); replaces the config file's effort",
     )
     args = parser.parse_args()
+    if args.list_configs:
+        for p in bundled_configs():
+            print(p.stem)
+        return
     if args.reset:
         live = args.live_dir.resolve()
         live.mkdir(parents=True, exist_ok=True)
@@ -732,7 +814,6 @@ def main() -> None:
         theme=args.theme,
         effort=args.effort,
     ).run()
-
 
 if __name__ == "__main__":
     main()
