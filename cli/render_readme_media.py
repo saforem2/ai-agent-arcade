@@ -32,7 +32,7 @@ def capture_render(board, cols=96, rows=46, status="", now=0.0, fly=None):
 
 def ansi_image(text, cols=96, rows=46, scale=1):
     cell_w, cell_h = 10 * scale, 20 * scale
-    renderer = ansi_png.CellRenderer(cell_w, cell_h, width=cols * cell_w, height=rows * cell_h)
+    renderer = ansi_png.CellRenderer(cell_w, cell_h, width=cols * cell_w, height=rows * cell_h, page=tui_dots.PANEL)
     return ansi_png.render_ansi(text, renderer)
 
 
