@@ -73,6 +73,29 @@ uv run python -m arcade_cli.series --reset --games 20 --live-dir "$ARCADE_LIVE"
 
 ### Configure another matchup
 
+#### Bundled presets
+
+This repo ships a few curated pairings under `configs/` (and inside the
+installed wheel, so they work via `uvx --from` with no checkout):
+
+| preset | one | two |
+|---|---|---|
+| `muse` | `inkling-bf16` | `muse-spark-bf16` |
+| `muse-mistral` | `mistral-large-4-nvfp4` | `muse-spark-bf16` |
+| `muse-inkling2` | `inkling-2-small` | `muse-spark-bf16` |
+
+```bash
+uvx ai-agent-arcade --config muse-inkling2 --games 20
+uvx ai-agent-arcade --list-configs   # show available presets
+```
+
+`--config` accepts a preset name (with or without `.toml`), a repo-relative
+path like `configs/muse-inkling2.toml`, or any absolute/relative file path.
+The headless runner has the same flags: `uvx ai-agent-arcade-series --config
+muse --games 20` and `--list-configs`.
+
+#### Custom matchup
+
 Pass a versioned TOML file to use any two OpenAI-compatible endpoints:
 
 ```toml

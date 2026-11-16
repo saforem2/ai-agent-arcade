@@ -735,6 +735,25 @@ class ArcadeApp(App):
                 self.runner_error_rendered = True
             self.last_event_size = size
 
+def bundled_configs() -> list[Path]:
+    out: list[Path] = []
+    try:
+        from importlib.resources import as_file, files
+        pkg = files("arcade_cli").joinpath("configs")
+        with as_file(pkg) as d:
+            if d.is_dir():
+                out.extend(sorted(d.glob("*.toml")))
+                if out:
+                    return out
+    except Exception:
+        pass
+    for base in (series.ROOT / "configs", Path.cwd() / "configs"):
+        if base.is_dir():
+            found = sorted(base.glob("*.toml"))
+            if found:
+                return found
+    return out
+
 
 def main() -> None:
     import argparse
@@ -744,7 +763,11 @@ def main() -> None:
     parser.add_argument("--start-index", type=int, default=1)
     parser.add_argument("--resume-live", action="store_true")
     parser.add_argument("--live-dir", type=Path, default=DEFAULT_LIVE)
-    parser.add_argument("--config", type=Path, help="TOML matchup configuration")
+    parser.add_argument("--config", type=Path,
+                        help="TOML matchup file — path, or a bundled preset name "
+                             "(e.g. muse, muse-mistral, muse-inkling2; .toml optional)")
+    parser.add_argument("--list-configs", action="store_true",
+                        help="list bundled matchup presets and exit")
     parser.add_argument("--view", action="store_true", help="view an existing live directory without starting models")
     parser.add_argument(
         "--reset",
@@ -771,6 +794,10 @@ def main() -> None:
              "(e.g. low, medium, high); replaces the config file's effort",
     )
     args = parser.parse_args()
+    if args.list_configs:
+        for p in bundled_configs():
+            print(p.stem)
+        return
     if args.reset:
         live = args.live_dir.resolve()
         live.mkdir(parents=True, exist_ok=True)
@@ -787,7 +814,6 @@ def main() -> None:
         theme=args.theme,
         effort=args.effort,
     ).run()
-
 
 if __name__ == "__main__":
     main()

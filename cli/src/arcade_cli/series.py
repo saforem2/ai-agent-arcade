@@ -43,10 +43,49 @@ def _chat_endpoint(base_url):
     return base if base.endswith("/chat/completions") else base + "/chat/completions"
 
 
+def resolve_config_path(raw) -> Path | None:
+    """Resolve --config to a readable file. Order:
+
+    1. Literal filesystem path (existing file — absolute or relative).
+    2. Bundled config by filename: looks inside the installed package's
+       ``arcade_cli/configs`` resource (zip-safe) and falls back to
+       ``configs/`` next to the repo checkout root so ``uv run`` still works.
+       Accepts with or without ``.toml`` — ``muse-inkling2`` resolves to
+       ``muse-inkling2.toml``.
+    3. Otherwise: leave as-is (caller will surface the FileNotFoundError).
+
+    ``None`` passes through so the default PLAYERS fallback is untouched.
+    """
+    if raw is None:
+        return None
+    p = Path(raw)
+    if p.exists():
+        return p
+    stem = p.name
+    if "/" not in str(raw) and "\\" not in str(raw):
+        for cand in (stem, stem + ".toml"):
+            # installed package resource
+            try:
+                pkg = files("arcade_cli").joinpath("configs").joinpath(cand)
+                with as_file(pkg) as resolved:
+                    if resolved.exists():
+                        return resolved
+            except Exception:
+                pass
+            # checkout fallback
+            for base in (Path(__file__).resolve().parents[3] / "configs",
+                         Path.cwd() / "configs"):
+                q = base / cand
+                if q.exists():
+                    return q
+    return p
+
+
 def load_players(config_path=None):
-    if config_path is None:
+    p = resolve_config_path(config_path)
+    if p is None:
         return [dict(PLAYERS["gpt-oss"]), dict(PLAYERS["inkling"])]
-    with Path(config_path).open("rb") as handle:
+    with Path(p).open("rb") as handle:
         data = tomllib.load(handle)
     if data.get("version") != 1:
         raise ValueError("match config must set version = 1")
@@ -705,7 +744,11 @@ def parse_args():
     parser.add_argument("--live-dir", type=Path, default=DEFAULT_LIVE)
     parser.add_argument("--start-index", type=int, default=1)
     parser.add_argument("--resume-live", action="store_true")
-    parser.add_argument("--config", type=Path)
+    parser.add_argument("--config", type=Path,
+                        help="TOML matchup file — path, or bundled preset name "
+                             "(e.g. muse, muse-mistral, muse-inkling2; .toml optional)")
+    parser.add_argument("--list-configs", action="store_true",
+                        help="list bundled matchup presets and exit")
     parser.add_argument(
         "--effort",
         default=None,
@@ -737,6 +780,26 @@ def parse_args():
 def run_series():
     global live_dir, ROOT
     args = parse_args()
+    if getattr(args, "list_configs", False):
+        # shared discovery with arcade_app.bundled_configs (avoid import cycle at runtime)
+        found: list[Path] = []
+        try:
+            pkg = files("arcade_cli").joinpath("configs")
+            with as_file(pkg) as d:
+                if d.is_dir():
+                    found = sorted(d.glob("*.toml"))
+        except Exception:
+            pass
+        if not found:
+            for base in (ROOT / "configs", Path.cwd() / "configs"):
+                if base.is_dir():
+                    f = sorted(base.glob("*.toml"))
+                    if f:
+                        found = f
+                        break
+        for p in found:
+            print(p.stem)
+        return
     players = load_players(args.config)
     if args.effort is not None:
         players = apply_effort_override(players, args.effort)
